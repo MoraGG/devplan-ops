@@ -302,6 +302,9 @@ def edit_std_node(nid):
         offset_days = int(request.form["offset_days"])
         direction = request.form.get("direction", "之后")
         base_is_t0 = 1 if request.form.get("base_is_t0") == "1" else 0
+        # 主责专业：表单提交才更新，未提交（None/空）保持原值，避免误清空
+        prof_raw = request.form.get("profession_id")
+        profession_id = int(prof_raw) if prof_raw not in (None, "") else None
         off = offset_days if direction == "之后" else -offset_days
         # 解析 depend_row -> 真实依赖节点 id（引擎依赖 depend_std_node_id 做遍历）
         depend_std_node_id = None
@@ -322,8 +325,12 @@ def edit_std_node(nid):
                 "VALUES(?,?,?,?,?,?)", (nid, depend_std_node_id, depend_row, off, direction, base_is_t0))
         # 同步 tmpl_finish_formula 文本（仅展示用）
         formula = "T0" if base_is_t0 else (f"=L{depend_row}{('+' if off>=0 else '')}{off}" if depend_row else None)
-        cur.execute("UPDATE std_node SET depend_row=?,offset_days=?,base_is_t0=?,tmpl_finish_formula=? WHERE id=?",
-                    (depend_row, off, base_is_t0, formula, nid))
+        if profession_id is not None:
+            cur.execute("UPDATE std_node SET depend_row=?,offset_days=?,base_is_t0=?,tmpl_finish_formula=?,profession_id=? WHERE id=?",
+                        (depend_row, off, base_is_t0, formula, profession_id, nid))
+        else:
+            cur.execute("UPDATE std_node SET depend_row=?,offset_days=?,base_is_t0=?,tmpl_finish_formula=? WHERE id=?",
+                        (depend_row, off, base_is_t0, formula, nid))
         con.commit(); cur.close(); con.close()
         return redirect(url_for("std_nodes"))
     cur.execute("SELECT id,level,seq,name,profession_id,tmpl_finish_formula,depend_row,offset_days,base_is_t0 FROM std_node WHERE id=?", (nid,))

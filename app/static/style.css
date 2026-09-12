@@ -110,3 +110,44 @@ input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(
 .btn-ghost { display: inline-block; background: #fff; border: 1px solid #c9d6ea; color: var(--brand-d); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; text-decoration: none; }
 .btn-ghost:hover { background: #f2f7fd; }
 .alert-row:hover td { background: #fff7f5; }
+
+/* ===== 关键路径可视化（项目详情页 / 关键路径视图共用）===== */
+/* 此前仅定义在独立模板 critical_path.html 内，导致项目详情页该区块无样式 */
+.path { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.node { background: #4338ca; color: #fff; border-radius: 8px; padding: 9px 11px; min-width: 108px; }
+.node .nm { font-weight: 600; font-size: 12.5px; line-height: 1.3; }
+.node .dt { font-size: 11.5px; opacity: .85; margin-top: 3px; }
+.node.mile { background: #dc2626; }
+.node.lv1  { background: #6366f1; }
+.node.lv2  { background: #0ea5e9; }
+.arrow { color: #9ca3af; font-size: 16px; }
+
+/* ===== 通用辅助类（此前散落在个别模板，缺失时退化为无样式）===== */
+/* 页面/区块引导说明 */
+.lead { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 6px 0 14px; }
+/* 表单容器：与 .form-box 同款面板，统一 new/edit 项目与编辑节点页观感 */
+.form-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 20px 24px; max-width: 720px; }
+/* 项目详情右上角「编辑项目」按钮 */
+.btn-edit { float: right; display: inline-block; background: #fff; border: 1px solid #c9d6ea;
+  color: var(--brand-d); padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  text-decoration: none; }
+.btn-edit:hover { background: #f2f7fd; }
+/* 主按钮旁的「取消」次按钮 */
+.btn-cancel { display: inline-block; margin-top: 16px; margin-left: 10px; background: #fff;
+  border: 1px solid #c9d6ea; color: var(--brand-d); padding: 8px 20px; border-radius: 6px;
+  font-size: 14px; text-decoration: none; }
+.btn-cancel:hover { background: #f2f7fd; }
+/* 节点「自定义」小标记 */
+.ov-badge { display: inline-block; margin-left: 6px; font-size: 11px; padding: 1px 7px;
+  border-radius: 8px; background: #fff4e6; color: #b26a00; border: 1px solid #f0d3a8; }
+/* 弹窗内状态提示：继承（蓝）/ 已自定义（橙） */
+.rule-hint { background: #f4f8fc; border: 1px solid #dbe7f3; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; color: #334; margin: 12px 0; line-height: 1.7; }
+.rule-override { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; color: #7c3f12; margin: 12px 0; line-height: 1.7; }
+/* 计划完成日期单元格：等宽数字，便于纵向比对 */
+.fin-cell { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* 分支编辑器里依赖下拉的外层占位 */
+.dep-slot { display: block; min-width: 0; }
+
