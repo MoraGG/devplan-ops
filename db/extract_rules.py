@@ -24,7 +24,7 @@ from dbconn import get_conn
 
 import openpyxl
 
-EXCEL = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+EXCEL = os.path.join(os.path.dirname(os.path.dirname(__file__)), "template",
                      "远建2026版三级计划（绿城基础含公式）.xlsx")
 
 # 前置信息!$B$col -> param code

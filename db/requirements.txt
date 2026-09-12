@@ -1,0 +1,4 @@
+# db/ 下的一次性工具脚本所需依赖（运行应用本身不需要）
+# 应用运行时依赖见根目录 requirements.txt
+pymysql
+openpyxl

@@ -2,8 +2,10 @@ import openpyxl, re, os
 import pymysql
 from pymysql.converters import escape_string
 
-SRC = "/root/uploads/1789086116145035650-远建2026版三级计划（绿城基础含公式）.xlsx"
-OUT = "/workspace/db/02_seed.sql"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+SRC = os.path.join(ROOT, "template", "远建2026版三级计划（绿城基础含公式）.xlsx")
+OUT = os.path.join(HERE, "02_seed.sql")
 wb = openpyxl.load_workbook(SRC, data_only=False)
 ws = wb["节点计划 (终稿)"]
 rows = list(ws.iter_rows(min_row=4, values_only=True))

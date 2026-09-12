@@ -1,9 +1,12 @@
 """房地产开发运营计划系统 · 标准库数据加载器（参数化，可读 Excel 直插 MySQL）。
 作为 02_seed.sql 的可执行替代：避开字符串转义，直接 executemany 写入。
 """
+import os
 import openpyxl, re, pymysql
 
-SRC = "/root/uploads/1789086116145035650-远建2026版三级计划（绿城基础含公式）.xlsx"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+SRC = os.path.join(ROOT, "template", "远建2026版三级计划（绿城基础含公式）.xlsx")
 wb = openpyxl.load_workbook(SRC, data_only=False)
 ws = wb["节点计划 (终稿)"]
 rows = list(ws.iter_rows(min_row=4, values_only=True))
@@ -49,8 +52,11 @@ for idx, r in enumerate(rows):
                       duration=r[7], formula=r[11], **(fm or {})))
     rownum_map[er] = len(nodes)
 
-con = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="devplan123",
-                      database="dev_plan", charset="utf8mb4")
+con = pymysql.connect(host=os.environ.get("DB_HOST", "127.0.0.1"),
+                      port=int(os.environ.get("DB_PORT", "3306")),
+                      user=os.environ.get("DB_USER", "root"),
+                      password=os.environ.get("DB_PASS", ""),
+                      database=os.environ.get("DB_NAME", "dev_plan"), charset="utf8mb4")
 cur = con.cursor()
 
 # 清空
@@ -62,7 +68,7 @@ cur.execute("SET FOREIGN_KEY_CHECKS=1")
 con.commit()
 
 # 建表（行级去注释后拆分，避免注释前缀吞掉语句）
-ddl = open("/workspace/db/01_ddl.sql", encoding="utf-8").read()
+ddl = open(os.path.join(HERE, "01_ddl.sql"), encoding="utf-8").read()
 _lines = [ln for ln in ddl.split("\n") if not ln.strip().startswith("--")]
 _body = "\n".join(_lines)
 stmts = [s.strip() for s in _body.split(";") if s.strip()]

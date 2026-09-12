@@ -1,8 +1,8 @@
 """由读库引擎生成关键路径视图 HTML（替代一次性脚本）。
 数据 100% 来自 MySQL（std_node + std_node_dependency），证明数据层打通。
 """
-import sys, json
-sys.path.insert(0, "db")
+import os, sys, json
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import RelativeDateEngine
 
 eng = RelativeDateEngine("2026-07-14")
@@ -62,7 +62,9 @@ th{{color:#6b7280;font-weight:600}}.tag{{display:inline-block;padding:2px 8px;bo
 <script>window.__DATA__={json.dumps(data, ensure_ascii=False)};</script>
 </body></html>"""
 
-with open("/workspace/prototype/critical_path.html", "w", encoding="utf-8") as f:
+OUT_HTML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "prototype", "critical_path.html")
+with open(OUT_HTML, "w", encoding="utf-8") as f:
     f.write(html)
-print("已生成 /workspace/prototype/critical_path.html，字节:", len(html))
+print(f"已生成 {OUT_HTML}，字节:", len(html))
 print("关键路径节点:", len(data["critical_path"]), "| 交付:", data["delivery_date"])

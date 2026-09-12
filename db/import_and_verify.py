@@ -1,14 +1,21 @@
-import pymysql, time, sys, re
+import os, pymysql, time, sys, re
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+DB = dict(host=os.environ.get("DB_HOST", "127.0.0.1"),
+          port=int(os.environ.get("DB_PORT", "3306")),
+          user=os.environ.get("DB_USER", "root"),
+          password=os.environ.get("DB_PASS", ""),
+          database=os.environ.get("DB_NAME", "dev_plan"), charset="utf8mb4")
+
 
 def conn():
-    return pymysql.connect(host="127.0.0.1", port=3306, user="root",
-                            password="devplan123", database="dev_plan",
-                            charset="utf8mb4", autocommit=False)
+    return pymysql.connect(**DB, autocommit=False)
+
 
 for i in range(30):
     try:
-        c = pymysql.connect(host="127.0.0.1", port=3306, user="root",
-                            password="devplan123", charset="utf8mb4")
+        c = pymysql.connect(**DB)
         c.close(); print("MySQL 就绪"); break
     except Exception:
         time.sleep(2)
@@ -52,8 +59,8 @@ cur.execute("SET FOREIGN_KEY_CHECKS=1")
 con.commit(); cur.close(); con.close()
 print(f"已清空 {len(tabs)} 张表")
 
-run_sql_file("/workspace/db/01_ddl.sql")
-run_sql_file("/workspace/db/02_seed.sql")
+run_sql_file(os.path.join(HERE, "01_ddl.sql"))
+run_sql_file(os.path.join(HERE, "02_seed.sql"))
 
 con = conn(); cur = con.cursor()
 checks = {

@@ -12,8 +12,11 @@ import datetime
 import pymysql
 import sqlite3
 
-MYSQL = dict(host="127.0.0.1", port=3306, user="root", password="devplan123",
-             database="dev_plan", charset="utf8mb4")
+MYSQL = dict(host=os.environ.get("DB_HOST", "127.0.0.1"),
+             port=int(os.environ.get("DB_PORT", "3306")),
+             user=os.environ.get("DB_USER", "root"),
+             password=os.environ.get("DB_PASS", ""),
+             database=os.environ.get("DB_NAME", "dev_plan"), charset="utf8mb4")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQLITE_PATH = os.path.join(HERE, "devplan.db")
