@@ -1,0 +1,20 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}发布标准库版本{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('std_nodes') }}">← 返回标准节点库</a>
+<h1 style="margin-top:10px">发布标准库新版本</h1>
+<div class="lead">将当前「工作副本」（所有即时生效的规则）固化为一个可回溯的版本快照。发布后可在「标准节点库」的版本管理中查看或回滚。已发布的项目计划（plan_node）不受影响。</div>
+<form method="post" class="form-wrap" style="margin-top:16px">
+  <label style="display:block;margin:10px 0">版本名称
+    <input name="name" placeholder="如：2026Q3 管线调整" required style="width:100%;padding:6px">
+  </label>
+  <label style="display:block;margin:10px 0">生效日期（该版本从哪天起对新项目生效）
+    <input type="date" name="effective_from" style="padding:6px">
+  </label>
+  <label style="display:block;margin:10px 0">备注 / 变更说明
+    <textarea name="note" rows="3" placeholder="本次改了哪些节点…" style="width:100%;padding:6px"></textarea>
+  </label>
+  <button class="btn" type="submit">发布版本</button>
+  <a class="btn-cancel" href="{{ url_for('std_nodes') }}">取消</a>
+</form>
+{% endblock %}

@@ -60,6 +60,7 @@ CREATE TABLE std_node_dependency (
 -- 参数化规则分支：从 Excel L 列 IF(前置信息!$B$x...) 公式解析而来。
 -- 每个参数化节点有多条分支，每条分支 = 一组前置参数条件 -> (依赖行, 偏移表达式)。
 -- 引擎套模板时按项目 prereq_json 逐节点选首条命中分支，得到该项目的实际工期边。
+-- version_no / is_active / effective_from：标准库版本化（仅生效版本 is_active=1 参与计算）。
 CREATE TABLE std_node_rule (
   id INT PRIMARY KEY AUTO_INCREMENT, std_node_id INT NOT NULL,
   branch_order INT NOT NULL, is_default TINYINT DEFAULT 0,
@@ -68,6 +69,9 @@ CREATE TABLE std_node_rule (
   offset_expr VARCHAR(255),      -- 偏移表达式, 如 "10+12+(topfloor-2)*5" / "14*30" / "-130"; NULL=不排程
   direction ENUM('之后','之前') DEFAULT '之后',
   base_is_t0 TINYINT DEFAULT 0,
+  version_no INT DEFAULT 1,
+  is_active TINYINT DEFAULT 1,
+  effective_from DATE,
   FOREIGN KEY (std_node_id) REFERENCES std_node(id)
 ) ENGINE=InnoDB;
 
@@ -101,7 +105,7 @@ CREATE TABLE rule_change_log (
   scope VARCHAR(16) NOT NULL DEFAULT '标准库',   -- '标准库' / '项目'
   std_node_id INT NOT NULL,
   project_id INT,
-  action VARCHAR(32) NOT NULL,                    -- '更新规则' / '恢复继承' / '固定日期' / '取消固定' / '初始导入'
+  action VARCHAR(32) NOT NULL,                    -- '更新规则' / '恢复继承' / '固定日期' / '取消固定' / '初始导入' / '版本回滚'
   before_json TEXT,
   after_json TEXT,
   operator VARCHAR(64) DEFAULT '代建运营部',
@@ -153,4 +157,17 @@ CREATE TABLE alert_record (
   id INT PRIMARY KEY AUTO_INCREMENT, plan_node_id INT NOT NULL, alert_rule_id INT,
   triggered_at DATETIME, delay_days INT, message VARCHAR(255),
   FOREIGN KEY (plan_node_id) REFERENCES plan_node(id)
+) ENGINE=InnoDB;
+
+-- 标准库规则版本目录（版本化：每次「发布版本」/「回滚」生成一条记录，对应整库规则快照）
+CREATE TABLE std_rule_version (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  version_no INT NOT NULL UNIQUE,
+  name VARCHAR(120),                       -- 版本名，如「2026Q3 管线调整」
+  note VARCHAR(255),                       -- 备注 / 变更说明
+  effective_from DATE,                     -- 该版本从哪天起对新项目生效
+  operator VARCHAR(64) DEFAULT '代建运营部',
+  source_version_no INT,                   -- 回滚时记录源自哪个版本
+  change_summary TEXT,                     -- 本次发布改了哪些节点（摘要）
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;

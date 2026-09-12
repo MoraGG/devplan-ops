@@ -6,6 +6,49 @@
 <div class="lead">共 {{ total }} 个节点（按 Excel 行序排列）。每个节点的「依赖关系 + 偏移天数」即相对工期引擎的唯一计算源——改这里 = 改规则，无需改代码。含参数化分支的节点点「分支规则」编辑 IF/AND 条件。</div>
 
 <div class="section">
+  <h2>标准库版本管理</h2>
+  <div class="toolbar" style="margin-bottom:8px">
+    <a class="btn-ghost" href="{{ url_for('std_rule_publish') }}">＋ 发布新版本</a>
+    <span class="muted">当前生效 = 最新版本；后台单节点编辑为「工作副本」，需点「发布」才固化为可回溯版本。</span>
+  </div>
+  {% if versions %}
+  <table>
+    <thead><tr>
+      <th style="width:64px">版本</th><th>名称</th><th style="width:110px">生效日</th>
+      <th style="width:120px">操作员</th><th>备注</th><th style="width:140px">操作</th>
+    </tr></thead>
+    <tbody>
+    {% for v in versions %}
+      <tr>
+        <td><b>v{{ v.version_no }}</b></td>
+        <td>{{ v.name or '—' }}</td>
+        <td>{{ v.effective_from or '—' }}</td>
+        <td>{{ v.operator }}</td>
+        <td class="muted">{{ v.note or '' }}</td>
+        <td>
+          <a href="{{ url_for('std_rule_version_view', v=v.version_no) }}">查看</a>
+          {% if not loop.first %}<a href="#" onclick="return rollbackVersion({{ v.version_no }})">回滚</a>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <form id="rb-form" method="post" style="display:none" action=""></form>
+  {% else %}
+  <div class="muted">尚无版本记录（请先运行 db/init_rule_version.py 初始化 v1 基线）。</div>
+  {% endif %}
+</div>
+<script>
+function rollbackVersion(v){
+  if(!confirm('确认回滚到 v'+v+'？将把 v'+v+' 的规则复制为最新版本并生效。')) return false;
+  var f=document.getElementById('rb-form');
+  f.action='/std-rule/rollback/'+v;
+  f.submit();
+  return false;
+}
+</script>
+
+<div class="section">
   <h2>全部标准节点（按 Excel 行序）<span class="pill">{{ total }} 个</span></h2>
   <table>
     <thead><tr>

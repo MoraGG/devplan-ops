@@ -1,0 +1,33 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}标准库版本 v{{ v }} 查看{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('std_nodes') }}">← 返回标准节点库</a>
+<h1 style="margin-top:10px">标准库版本 v{{ v }}（只读快照）</h1>
+<div class="lead">
+  版本名：{{ vname or '—' }} ｜ 生效日：{{ veffective or '—' }} ｜ 发布于：{{ vcreated or '—' }}。
+  此为历史快照，不影响当前工作副本与已建项目。
+</div>
+<div class="section">
+  <h2>全部标准节点（v{{ v }} 规则）<span class="pill">{{ total }} 个</span></h2>
+  <table>
+    <thead><tr>
+      <th style="width:40px">#</th>
+      <th style="width:72px">节点等级</th>
+      <th>节点名称</th>
+      <th style="width:96px">主责专业</th>
+      <th>相对工期规则</th>
+    </tr></thead>
+    <tbody>
+    {% for n in nodes %}
+      <tr>
+        <td class="muted">{{ n.seq or '—' }}</td>
+        <td>{% if n.level %}<span class="lvtag lv-{{ n.level }}">{{ n.level }}</span>{% else %}—{% endif %}</td>
+        <td>{{ n.name }}</td>
+        <td>{{ n.prof }}</td>
+        <td class="muted">{{ n.dep_desc }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

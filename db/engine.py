@@ -47,15 +47,15 @@ class RelativeDateEngine:
             if r["excel_row"]:
                 self.row_to_id[r["excel_row"]] = r["id"]
         cur.execute("""SELECT std_node_id, depend_std_node_id, depend_row, offset_days, base_is_t0
-                       FROM std_node_dependency""")
+                       FROM std_node_dependency WHERE is_active=1""")
         for r in cur.fetchall():
             self.deps_raw.append((r["std_node_id"], r["depend_std_node_id"], r["depend_row"],
                                   r["offset_days"], r["base_is_t0"]))
         self.deps = list(self.deps_raw)
-        # 参数化规则
+        # 参数化规则（仅生效版本 is_active=1 参与计算）
         cur.execute("""SELECT std_node_id, branch_order, is_default, conditions_json,
                               depend_row, offset_expr, direction, base_is_t0
-                       FROM std_node_rule ORDER BY std_node_id, branch_order""")
+                       FROM std_node_rule WHERE is_active=1 ORDER BY std_node_id, branch_order""")
         for r in cur.fetchall():
             self.rules.setdefault(r["std_node_id"], []).append(dict(r))
         # 项目级规则（override）：存在则整体覆盖标准库对应节点

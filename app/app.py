@@ -273,8 +273,10 @@ def std_nodes():
     node_meta = {r["id"]: r for r in cur.fetchall()}
     cur.execute("SELECT std_node_id,depend_row,offset_days,base_is_t0,direction,depend_std_node_id FROM std_node_dependency")
     deps = {(r["std_node_id"]): r for r in cur.fetchall()}
-    cur.execute("SELECT DISTINCT std_node_id FROM std_node_rule")
+    cur.execute("SELECT DISTINCT std_node_id FROM std_node_rule WHERE is_active=1")
     rule_ids = {r["std_node_id"] for r in cur.fetchall()}
+    cur.execute("SELECT id,version_no,name,note,effective_from,operator,created_at FROM std_rule_version ORDER BY version_no DESC")
+    versions = [dict(r) for r in cur.fetchall()]
     cur.close(); con.close()
     for n in nodes:
         n["prof"] = prof.get(n["profession_id"], "—")
@@ -291,7 +293,7 @@ def std_nodes():
             n["dep_desc"] = "—"
         if n["id"] in rule_ids:
             n["dep_desc"] += " · 含参数化分支"
-    return render_template("std_nodes.html", nodes=nodes, rule_ids=rule_ids, total=len(nodes))
+    return render_template("std_nodes.html", nodes=nodes, rule_ids=rule_ids, total=len(nodes), versions=versions)
 
 
 @app.route("/std-node/<int:nid>/edit", methods=["GET", "POST"])
@@ -312,17 +314,12 @@ def edit_std_node(nid):
             cur.execute("SELECT id FROM std_node WHERE excel_row=?", (int(depend_row),))
             r = cur.fetchone()
             depend_std_node_id = r["id"] if r else None
-        # upsert 依赖
-        cur.execute("SELECT id FROM std_node_dependency WHERE std_node_id=?", (nid,))
-        exist = cur.fetchone()
-        if exist:
-            cur.execute(
-                "UPDATE std_node_dependency SET depend_row=?,offset_days=?,direction=?,base_is_t0=?,depend_std_node_id=? "
-                "WHERE std_node_id=?", (depend_row, off, direction, base_is_t0, depend_std_node_id, nid))
-        else:
-            cur.execute(
-                "INSERT INTO std_node_dependency(std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0) "
-                "VALUES(?,?,?,?,?,?)", (nid, depend_std_node_id, depend_row, off, direction, base_is_t0))
+        # 工作副本语义：退役该节点旧生效行，插入新行（is_active=1, version_no=当前工作版）
+        wv = cur_work_version(cur)
+        cur.execute("UPDATE std_node_dependency SET is_active=0 WHERE std_node_id=? AND is_active=1", (nid,))
+        cur.execute(
+            "INSERT INTO std_node_dependency(std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0,version_no,is_active) "
+            "VALUES(?,?,?,?,?,?,?,1)", (nid, depend_std_node_id, depend_row, off, direction, base_is_t0, wv))
         # 同步 tmpl_finish_formula 文本（仅展示用）
         formula = "T0" if base_is_t0 else (f"=L{depend_row}{('+' if off>=0 else '')}{off}" if depend_row else None)
         if profession_id is not None:
@@ -421,13 +418,14 @@ def edit_std_node_rules(nid):
                               is_default=is_default))
         before = rules_snapshot("标准库", nid)
         con = db(); cur = con.cursor()
-        cur.execute("DELETE FROM std_node_rule WHERE std_node_id=?", (nid,))
+        wv = cur_work_version(cur)
+        cur.execute("UPDATE std_node_rule SET is_active=0 WHERE std_node_id=? AND is_active=1", (nid,))
         for i, b in enumerate(clean):
             cur.execute(
-                "INSERT INTO std_node_rule(std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0) "
-                "VALUES(?,?,?,?,?,?,?,0)",
+                "INSERT INTO std_node_rule(std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0,version_no,is_active) "
+                "VALUES(?,?,?,?,?,?,?,0,?,1)",
                 (nid, i + 1, 1 if b["is_default"] else 0,
-                 json.dumps(b["conditions"], ensure_ascii=False), b["depend_row"], b["offset_expr"], b["direction"]))
+                 json.dumps(b["conditions"], ensure_ascii=False), b["depend_row"], b["offset_expr"], b["direction"], wv))
         cur.execute("UPDATE std_node SET has_condition=1 WHERE id=?", (nid,))
         # 同步 std_node 的默认依赖展示（非参数化回退用）：取默认分支或首个分支
         default_b = next((b for b in clean if b["is_default"]), None) or (clean[0] if clean else None)
@@ -522,16 +520,24 @@ def recompute_project_finish(pid, vid, t0, prereq_json):
     con.commit(); cur.close(); con.close()
 
 
-def log_rule_change(scope, std_node_id, project_id, action, before=None, after=None, operator="代建运营部"):
-    """记录标准库 / 项目级规则与固定日期的变更留痕。"""
-    con = db(); cur = con.cursor()
+def log_rule_change(scope, std_node_id, project_id, action, before=None, after=None, operator="代建运营部", con=None):
+    """记录标准库 / 项目级规则与固定日期的变更留痕。
+    con 可传入调用方连接以复用事务（防 SQLite 写锁）；为 None 时自行开连接并提交。"""
+    own = con is None
+    if own:
+        con = db()
+    cur = con.cursor()
     cur.execute(
         "INSERT INTO rule_change_log(scope,std_node_id,project_id,action,before_json,after_json,operator) "
         "VALUES(?,?,?,?,?,?,?)",
         (scope, std_node_id, project_id, action,
          json.dumps(before, ensure_ascii=False) if before is not None else None,
          json.dumps(after, ensure_ascii=False) if after is not None else None, operator))
-    con.commit(); cur.close(); con.close()
+    if own:
+        con.commit()
+    cur.close()
+    if own:
+        con.close()
 
 
 def rules_snapshot(scope, std_node_id, project_id=None):
@@ -539,7 +545,7 @@ def rules_snapshot(scope, std_node_id, project_id=None):
     con = db(); cur = con.cursor()
     if scope == "标准库":
         cur.execute("""SELECT branch_order,is_default,conditions_json,depend_row,offset_expr,direction
-                       FROM std_node_rule WHERE std_node_id=? ORDER BY branch_order""", (std_node_id,))
+                       FROM std_node_rule WHERE std_node_id=? AND is_active=1 ORDER BY branch_order""", (std_node_id,))
     else:
         cur.execute("""SELECT branch_order,is_default,conditions_json,depend_row,offset_expr,direction
                        FROM project_node_rule WHERE project_id=? AND std_node_id=? ORDER BY branch_order""",
@@ -763,6 +769,149 @@ def alert_center():
     cur.close(); con.close()
     return render_template("alert_center.html", records=records, total=len(records),
                            plan_types=PLAN_TYPES, today=TODAY)
+
+
+# ---------------- 标准库版本化：发布 / 回滚 / 查看 ----------------
+def cur_work_version(cur):
+    """当前工作版本号 = std_rule_version 最大 version_no + 1；无记录则 1。"""
+    cur.execute("SELECT COALESCE(MAX(version_no),0) AS m FROM std_rule_version")
+    return (cur.fetchone()["m"] or 0) + 1
+
+
+def snapshot_active_rules():
+    """读取当前生效集（is_active=1）全部规则到内存，供发布/回滚复制（避免同表自覆盖）。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0 "
+                "FROM std_node_rule WHERE is_active=1 ORDER BY std_node_id, branch_order")
+    rules = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0 "
+                "FROM std_node_dependency WHERE is_active=1")
+    deps = [dict(r) for r in cur.fetchall()]
+    cur.close(); con.close()
+    return rules, deps
+
+
+def publish_version(name, note, effective_from, operator="代建运营部"):
+    """把当前工作副本固化为新版本快照（整库全量复制，旧版 is_active=0）。"""
+    con = db(); cur = con.cursor()
+    new_v = cur_work_version(cur)
+    rules, deps = snapshot_active_rules()
+    cur.execute("UPDATE std_node_rule SET is_active=0 WHERE is_active=1")
+    cur.execute("UPDATE std_node_dependency SET is_active=0 WHERE is_active=1")
+    for r in rules:
+        cur.execute(
+            "INSERT INTO std_node_rule(std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0,version_no,is_active) "
+            "VALUES(?,?,?,?,?,?,?,?,?,1)",
+            (r["std_node_id"], r["branch_order"], r["is_default"], r["conditions_json"], r["depend_row"],
+             r["offset_expr"], r["direction"], r["base_is_t0"], new_v))
+    for d in deps:
+        cur.execute(
+            "INSERT INTO std_node_dependency(std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0,version_no,is_active) "
+            "VALUES(?,?,?,?,?,?,?,1)",
+            (d["std_node_id"], d["depend_std_node_id"], d["depend_row"], d["offset_days"], d["direction"],
+             d["base_is_t0"], new_v))
+    cur.execute(
+        "INSERT INTO std_rule_version(version_no,name,note,effective_from,operator,change_summary) "
+        "VALUES(?,?,?,?,?,?)",
+        (new_v, name or f"版本{new_v}", note, effective_from, operator, "发布当前工作副本"))
+    con.commit(); cur.close(); con.close()
+    return new_v
+
+
+def rollback_version(v, operator="代建运营部"):
+    """回滚到版本 v：复制 v 的全部规则为最新版本并生效，写变更日志（传 con 防 SQLite 锁）。"""
+    con = db(); cur = con.cursor()
+    new_v = cur_work_version(cur)
+    before = snapshot_active_rules()
+    cur.execute("SELECT std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0 "
+                "FROM std_node_rule WHERE version_no=?", (v,))
+    rules = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0 "
+                "FROM std_node_dependency WHERE version_no=?", (v,))
+    deps = [dict(r) for r in cur.fetchall()]
+    if not rules and not deps:
+        cur.close(); con.close()
+        raise ValueError(f"版本 v{v} 不存在")
+    cur.execute("UPDATE std_node_rule SET is_active=0 WHERE is_active=1")
+    cur.execute("UPDATE std_node_dependency SET is_active=0 WHERE is_active=1")
+    for r in rules:
+        cur.execute(
+            "INSERT INTO std_node_rule(std_node_id,branch_order,is_default,conditions_json,depend_row,offset_expr,direction,base_is_t0,version_no,is_active) "
+            "VALUES(?,?,?,?,?,?,?,?,?,1)",
+            (r["std_node_id"], r["branch_order"], r["is_default"], r["conditions_json"], r["depend_row"],
+             r["offset_expr"], r["direction"], r["base_is_t0"], new_v))
+    for d in deps:
+        cur.execute(
+            "INSERT INTO std_node_dependency(std_node_id,depend_std_node_id,depend_row,offset_days,direction,base_is_t0,version_no,is_active) "
+            "VALUES(?,?,?,?,?,?,?,1)",
+            (d["std_node_id"], d["depend_std_node_id"], d["depend_row"], d["offset_days"], d["direction"],
+             d["base_is_t0"], new_v))
+    cur.execute(
+        "INSERT INTO std_rule_version(version_no,name,note,operator,source_version_no,change_summary) "
+        "VALUES(?,?,?,?,?,?)",
+        (new_v, f"回滚自 v{v}", f"从 v{v} 回滚生成 v{new_v}", operator, v, f"回滚到 v{v}"))
+    after = snapshot_active_rules()
+    log_rule_change("标准库", 0, None, "版本回滚",
+                    {"from_version": v, "rules": before[0], "deps": before[1]},
+                    {"to_version": new_v, "rules": after[0], "deps": after[1]},
+                    operator=operator, con=con)
+    con.commit(); cur.close(); con.close()
+    return new_v
+
+
+@app.route("/std-rule/publish", methods=["GET", "POST"])
+def std_rule_publish():
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        note = (request.form.get("note") or "").strip()
+        ef = request.form.get("effective_from") or None
+        publish_version(name, note, ef)
+        return redirect(url_for("std_nodes"))
+    return render_template("std_rule_publish.html")
+
+
+@app.route("/std-rule/rollback/<int:v>", methods=["POST"])
+def std_rule_rollback(v):
+    rollback_version(v)
+    return redirect(url_for("std_nodes"))
+
+
+@app.route("/std-rule/version/<int:v>")
+def std_rule_version_view(v):
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id,excel_row,level,seq,name,profession_id,tmpl_finish_formula,depend_row,offset_days,base_is_t0 FROM std_node ORDER BY excel_row")
+    nodes = cur.fetchall()
+    cur.execute("SELECT id,name FROM profession")
+    prof = {r["id"]: r["name"] for r in cur.fetchall()}
+    cur.execute("SELECT id,excel_row,level,seq,name FROM std_node")
+    node_meta = {r["id"]: r for r in cur.fetchall()}
+    cur.execute("SELECT std_node_id,depend_row,offset_days,base_is_t0,direction,depend_std_node_id FROM std_node_dependency WHERE version_no=?", (v,))
+    deps = {(r["std_node_id"]): r for r in cur.fetchall()}
+    cur.execute("SELECT DISTINCT std_node_id FROM std_node_rule WHERE version_no=? AND is_active=1", (v,))
+    rule_ids = {r["std_node_id"] for r in cur.fetchall()}
+    cur.execute("SELECT name,effective_from,created_at FROM std_rule_version WHERE version_no=?", (v,))
+    vrow = cur.fetchone()
+    cur.close(); con.close()
+    vname = vrow["name"] if vrow else None
+    veffective = vrow["effective_from"] if vrow else None
+    vcreated = vrow["created_at"] if vrow else None
+    for n in nodes:
+        n["prof"] = prof.get(n["profession_id"], "—")
+        dp = deps.get(n["id"])
+        if dp:
+            if dp["base_is_t0"]:
+                n["dep_desc"] = "T0基准" + (f" +{dp['offset_days']}天" if dp["offset_days"] else "")
+            else:
+                dn = node_meta.get(dp["depend_std_node_id"])
+                dname = dn["name"] if dn else f"L{dp['depend_row']}"
+                n["dep_desc"] = (f"依赖 {dname}(L{dp['depend_row']}) "
+                                 f"{dp['direction']} {abs(dp['offset_days'])}天")
+        else:
+            n["dep_desc"] = "—"
+        if n["id"] in rule_ids:
+            n["dep_desc"] += " · 含参数化分支"
+    return render_template("std_rule_version.html", nodes=nodes, total=len(nodes),
+                           v=v, vname=vname, veffective=veffective, vcreated=vcreated)
 
 
 if __name__ == "__main__":
