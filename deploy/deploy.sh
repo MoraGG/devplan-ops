@@ -8,6 +8,11 @@ BRANCH=main
 
 cd "$REPO"
 
+echo "==> 确保 MySQL 容器在跑"
+if ! sudo -n docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^devplan_mysql$'; then
+  sudo -n docker start devplan_mysql && sleep 3
+fi
+
 echo "==> 拉取最新代码 ($BRANCH)"
 git pull --ff-only origin "$BRANCH"
 

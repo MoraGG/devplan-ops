@@ -1,7 +1,9 @@
 [Unit]
 Description=DevPlan Ops - 房地产开发运营计划系统（代建三级计划管理）
 After=network.target
-Wants=devplan-mysql.service
+# 注意：数据库为 Docker 容器 devplan_mysql（非 systemd 单元），
+# 启动前请确保容器在跑：sudo docker start devplan_mysql
+# deploy/deploy.sh 已包含该步骤。
 
 [Service]
 Type=simple
