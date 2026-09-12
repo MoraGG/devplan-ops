@@ -39,11 +39,27 @@ body {
 .card .row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
 .card .kpi-n { font-weight: 700; color: var(--brand-d); }
 
+/* 项目卡片（看板 .pcard）——整卡可点击 */
+.pcard { position: relative; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  transition: box-shadow .15s ease, transform .15s ease; }
+.pcard:hover { box-shadow: 0 6px 18px rgba(47,111,237,.15); transform: translateY(-2px); }
+.pcard h3 { margin: 0 34px 6px 0; font-size: 16px; }
+.pcard .meta { color: var(--muted); font-size: 12px; }
+.pcard .row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
+/* 空锚点：绝对铺满整张卡片，使卡片任意位置可点进详情 */
+.pcard-link { position: absolute; inset: 0; z-index: 1; border-radius: 10px; }
+/* 右上角「编辑」与卡片内预警徽标：浮在覆盖层之上，保持各自可点 */
+.pcard-edit { position: absolute; top: 15px; right: 16px; z-index: 2;
+  font-size: 12px; font-weight: 600; color: var(--brand); text-decoration: none; }
+.pcard-edit:hover { text-decoration: underline; }
+.pcard .b-alert { position: relative; z-index: 2; text-decoration: none; }
+
 /* KPI 条 */
 .kpis { display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 20px; min-width: 130px; }
-.kpi .v { font-size: 24px; font-weight: 700; }
-.kpi .l { color: var(--muted); font-size: 12px; }
+.kpi b { display: block; font-size: 24px; font-weight: 700; line-height: 1.25; }
+.kpi span { color: var(--muted); font-size: 12px; }
 
 /* 表格 */
 table { width: 100%; border-collapse: collapse; background: var(--panel); margin-top: 14px; }

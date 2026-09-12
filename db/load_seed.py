@@ -22,11 +22,21 @@ PRE = [('volum', '容积率', '["小于2.5","大于2.5"]'), ('basefloor', '地�
        ('facade', '外立面形式', '["保温涂料","保温涂料+铝板"]')]
 
 def parse_formula(f):
+    """把 L 列公式解析为「依赖行 + 偏移天数」。
+
+    支持三类形态（取公式中【首个】L 引用，与 extract_rules 的分支提取口径一致）：
+      =L6+30 / =L82-150          带偏移引用
+      =L53                       纯引用 -> 偏移 0
+      =IF(前置信息!$B$10="精装",L139-150,"")  取 L139 -150，条件分支交由 std_node_rule
+    ⚠️ 历史缺陷：旧正则 r'L(\\d+)([+\\-])(\\d+)' 强制要求带 ±数字，
+      导致「正式开工（开工）」的 =L53 被判为无依赖（depend_row=None）而丢边。
+    """
     if not isinstance(f, str) or not f.startswith('='):
         return None
-    m = re.findall(r'L(\d+)([+\-])(\d+)', f[1:])
+    m = re.search(r'L(\d+)(?:([+\-])(\d+))?', f)
     if m:
-        row = int(m[0][0]); off = int(m[0][2]) * (1 if m[0][1] == '+' else -1)
+        row = int(m.group(1))
+        off = int(m.group(3)) * (1 if m.group(2) == '+' else -1) if m.group(2) else 0
         return dict(depend_row=row, offset_days=off, base_is_t0=int(row == 6))
     return dict(depend_row=None, offset_days=None, base_is_t0=0)
 
@@ -52,29 +62,43 @@ for idx, r in enumerate(rows):
                       duration=r[7], formula=r[11], **(fm or {})))
     rownum_map[er] = len(nodes)
 
+DB_NAME = os.environ.get("DB_NAME", "dev_plan")
 con = pymysql.connect(host=os.environ.get("DB_HOST", "127.0.0.1"),
                       port=int(os.environ.get("DB_PORT", "3306")),
                       user=os.environ.get("DB_USER", "root"),
                       password=os.environ.get("DB_PASS", ""),
-                      database=os.environ.get("DB_NAME", "dev_plan"), charset="utf8mb4")
+                      database=DB_NAME, charset="utf8mb4")
 cur = con.cursor()
 
 # 清空
 cur.execute("SET FOREIGN_KEY_CHECKS=0")
-cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='dev_plan'")
+cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema=%s", (DB_NAME,))
 for (t,) in cur.fetchall():
     cur.execute(f"DROP TABLE IF EXISTS {t}")
 cur.execute("SET FOREIGN_KEY_CHECKS=1")
 con.commit()
 
-# 建表（行级去注释后拆分，避免注释前缀吞掉语句）
+# 建表（剔除行首与【行内】注释后按 ; 拆分）
+# ⚠️ 旧写法只删「以 -- 开头的行」，但 01_ddl.sql 的列注释里含 ';'
+#    （如 "-- ...excel_row; NULL=该参数组合下节点不排程"），行内分号会把
+#    CREATE TABLE 截断 → 1064 语法错误。故必须先按行内 -- 截断再拆分。
+# 另：三个子表（project_node_rule / project_node_fixed / rule_change_log）
+#    的外键指向后文才定义的 project，故建表期间关闭外键检查（已实测可豁免前向引用）。
 ddl = open(os.path.join(HERE, "01_ddl.sql"), encoding="utf-8").read()
-_lines = [ln for ln in ddl.split("\n") if not ln.strip().startswith("--")]
+_lines = []
+for ln in ddl.split("\n"):
+    cut = ln.find("--")
+    if cut >= 0:
+        ln = ln[:cut]
+    if ln.strip():
+        _lines.append(ln)
 _body = "\n".join(_lines)
 stmts = [s.strip() for s in _body.split(";") if s.strip()]
 print(f"DDL 语句数: {len(stmts)}")
+cur.execute("SET FOREIGN_KEY_CHECKS=0")
 for s in stmts:
     cur.execute(s)
+cur.execute("SET FOREIGN_KEY_CHECKS=1")
 con.commit()
 
 # 参数化插入

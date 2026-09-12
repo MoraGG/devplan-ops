@@ -61,6 +61,9 @@ db/
   engine.py         # RelativeDateEngine 相对工期引擎 + compute_alerts 预警引擎
   extract_rules.py  # 从 Excel L 列 IF 公式提取参数化分支规则
   load_seed.py      # 参数化直插标准库（推荐作为 02_seed.sql 的可执行替代）
+  extract_rules.py  # 从 Excel L 列 IF 公式提取参数化分支规则
+  backup_mysql.py   # 重建/迁移前全库备份（导出 MySQL 方言 SQL 到 db/_backup/）
+  check_coverage.py # 排程覆盖度体检：统计 148 节点中拿不到日期的节点
   import_and_verify.py / gen_critical_path.py / migrate_to_sqlite.py / regen_seed.py
   01_ddl.sql        # MySQL 版表结构
   02_seed.sql       # 标准节点库种子（不含 std_node_rule）
