@@ -1,27 +1,45 @@
 # -*- coding: utf-8 -*-
-"""生成多项目演示数据：清理测试项目，套模板生成 3 个差异化演示项目。
+"""生成多项目演示数据：清理旧项目，套模板生成 3 个差异化演示项目。
 
 每个项目带不同前置参数（地上层数/交付形式/开发贷/户内改造/外立面），
-使相对工期引擎按参数化规则算出不同总工期，体现"不同前置参数→不同计划"。
+使相对工期引擎按参数化规则算出不同总工期，体现"不同前置参数 → 不同计划"。
 连接走 dbconn（SQLite / MySQL 通用）。
+
+清理范围：project / plan_version / plan_node 及其从属表
+（alert_record、rule_change_log、project_node_rule、project_node_fixed）。
+标准层（std_node / std_node_rule / std_duration / alert_rule 等）保持不动。
+⚠️ 删除顺序必须由外向内，否则 MySQL 外键约束会报错。
 """
-import sys, os, json
+import sys
+import os
+import json
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "db"))
-from dbconn import get_conn
-from engine import RelativeDateEngine
+from dbconn import get_conn            # noqa: E402
+from engine import RelativeDateEngine  # noqa: E402
 
 # (名称, 委托方, 楼型id, T0, 前置参数)
+# 楼型 id：1=18F高层 2=4F及以下 3=6F叠拼 4=8F洋房 5=11F小高层 6=27F高层 7=33F高层
+# 前置参数：p7=地上最高层数 p8=有无开发贷 p9=交付形式 p10=有无户内改造 p11=外立面形式
 DEMOS = [
-    ("滨江新城代建项目（住宅）", "某城投集团", 1, "2026-07-14",
-     {"p7": "18", "p9": "精装", "p8": "无", "p10": "有", "p11": "保温涂料"}),     # 18F高层
-    ("中央广场代建项目（商业综合体）", "某商管公司", 6, "2026-09-01",
-     {"p7": "27", "p9": "精装", "p8": "有", "p10": "有", "p11": "保温涂料+铝板"}),  # 27F高层
-    ("智造园代建项目（产业园）", "某产投集团", 5, "2027-01-10",
-     {"p7": "11", "p9": "毛坯", "p8": "无", "p10": "无", "p11": "保温涂料"}),     # 11F小高层
+    ("滨江新城代建项目（商品房）", "某城投集团", 1, "2026-07-14",
+     {"p7": "18", "p9": "精装", "p8": "无", "p10": "有", "p11": "保温涂料"}),      # 18F 精装
+    ("中央公园代建项目（商品房）", "某置业公司", 6, "2026-09-01",
+     {"p7": "27", "p9": "精装", "p8": "有", "p10": "有", "p11": "保温涂料+铝板"}),  # 27F 精装 + 开发贷
+    ("云栖名苑代建项目（安置房）", "某区城投", 5, "2027-01-10",
+     {"p7": "11", "p9": "毛坯", "p8": "无", "p10": "无", "p11": "保温涂料"}),      # 11F 毛坯
 ]
 
-con = get_conn(); cur = con.cursor()
-cur.execute("DELETE FROM plan_node"); cur.execute("DELETE FROM plan_version"); cur.execute("DELETE FROM project")
+con = get_conn()
+cur = con.cursor()
+for sql in ("DELETE FROM alert_record",
+            "DELETE FROM rule_change_log",
+            "DELETE FROM project_node_rule",
+            "DELETE FROM project_node_fixed",
+            "DELETE FROM plan_node",
+            "DELETE FROM plan_version",
+            "DELETE FROM project"):
+    cur.execute(sql)
 con.commit()
 
 for name, client, bt_id, t0, prereq in DEMOS:
@@ -38,5 +56,6 @@ for name, client, bt_id, t0, prereq in DEMOS:
     n = eng.apply_to_project(pid, vid, "内控")
     print(f"  {name}: T0={t0} 交付={d['delivery_date']} 总工期={d['total_months']}月 写入节点={n}")
 
-cur.close(); con.close()
+cur.close()
+con.close()
 print("演示数据生成完成（含前置参数，工期按参数化规则差异化）。")
