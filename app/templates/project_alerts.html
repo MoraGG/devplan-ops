@@ -1,0 +1,35 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}{{ p.name }} · 预警中心{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('project_detail', pid=p.id) }}">← 返回项目详情</a>
+<h1 style="margin-top:10px">{{ p.name }} · 预警中心</h1>
+<div class="page-sub">共 <b style="color:var(--crit)">{{ records|length }}</b> 条预警记录；{{ flagged }} 个计划节点处于非「正常」状态。</div>
+
+{% for pt in plan_types %}
+<form method="post" action="{{ url_for('project_compute_alerts', pid=p.id) }}" style="display:inline;margin-right:8px">
+  <input type="hidden" name="plan_type" value="{{ pt }}">
+  <button class="btn-ghost" type="submit">重新计算（{{ pt }}）</button>
+</form>
+{% endfor %}
+<span class="muted" style="font-size:12px">业务当前日：{{ today }} · 按「层级×版本」规则比对计划完成日与参考日</span>
+
+<table style="margin-top:18px">
+  <thead><tr>
+    <th style="width:70px">层级</th><th>节点</th><th style="width:90px">偏差(天)</th>
+    <th style="width:90px">节点状态</th><th>预警说明</th><th style="width:150px">触发时间</th>
+  </tr></thead>
+  <tbody>
+  {% for r in records %}
+    <tr class="alert-row">
+      <td><span class="lvtag lv-{{ r.level }}">{{ r.level }}</span></td>
+      <td>{{ r.node_name }}</td>
+      <td><b class="{% if r.delay_days>=14 %}crit{% else %}warn-t{% endif %}">+{{ r.delay_days }}</b></td>
+      <td><span class="tag {% if r.node_status=='延期' %}warn{% else %}grey{% endif %}">{{ r.node_status }}</span></td>
+      <td>{{ r.message }}</td>
+      <td class="muted">{{ r.triggered_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if not records %}<p class="muted">暂无预警。点击上方「重新计算」按当前业务日评估（尚未填报实际进度时，按计划完成日是否已过判定）。</p>{% endif %}
+{% endblock %}

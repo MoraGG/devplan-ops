@@ -1,0 +1,33 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}预警规则 · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('dashboard') }}">← 返回看板</a>
+<h1 style="margin-top:10px">预警规则配置</h1>
+<div class="page-sub">按「节点层级 × 计划版本」设定延期阈值（天）。偏差 ≥ 阈值即触发预警并记录。默认规则在系统启动时自动写入。</div>
+
+<div style="margin:16px 0">
+  <a class="btn" href="{{ url_for('alert_rule_edit') }}">+ 新增规则</a>
+  <a class="btn-ghost" href="{{ url_for('alert_center') }}">前往预警中心</a>
+</div>
+
+<table>
+  <thead><tr><th>节点层级</th><th>计划版本</th><th>阈值(天)</th><th>通知对象</th><th style="width:140px">操作</th></tr></thead>
+  <tbody>
+  {% for r in rules %}
+    <tr>
+      <td><span class="lvtag lv-{{ r.level }}">{{ r.level }}</span></td>
+      <td>{{ r.plan_type }}</td>
+      <td><b>{{ r.threshold_days }}</b></td>
+      <td>{{ r.notify_target or '—' }}</td>
+      <td>
+        <a class="lnk" href="{{ url_for('alert_rule_edit', rid=r.id) }}">编辑</a>
+        <form method="post" action="{{ url_for('alert_rule_delete', rid=r.id) }}" style="display:inline" onsubmit="return confirm('确认删除该规则？关联预警记录也会一并删除。')">
+          <button class="lnk-del" type="submit">删除</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if not rules %}<p class="muted">暂无规则。点击「+ 新增规则」添加，或确认系统已初始化默认规则。</p>{% endif %}
+{% endblock %}

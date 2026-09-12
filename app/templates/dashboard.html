@@ -1,0 +1,35 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}项目看板 · 开发运营计划系统{% endblock %}
+{% block content %}
+<h1>项目经营看板</h1>
+<div class="page-sub">代建总部运营部 · 多项目开发计划一览（关键路径由相对工期引擎实时计算）</div>
+
+<div class="kpis">
+  <div class="kpi"><b>{{ kpi.total }}</b><span>在管项目</span></div>
+  <div class="kpi"><b>{{ kpi.on_going }}</b><span>进行中</span></div>
+  <div class="kpi"><b>{{ kpi.delivered }}</b><span>已交付</span></div>
+  <div class="kpi"><b>{{ kpi.avg_months }}</b><span>平均总工期(月)</span></div>
+  <div class="kpi"><b style="color:{% if kpi.alerts %}var(--crit){% else %}var(--ok){% endif %}">{{ kpi.alerts }}</b><span>预警项</span></div>
+</div>
+
+<div class="grid">
+  {% for c in cards %}
+  <div class="pcard">
+    <a class="pcard-link" href="{{ url_for('project_detail', pid=c.id) }}"></a>
+    <a class="pcard-edit" href="{{ url_for('edit_project', pid=c.id) }}">编辑</a>
+    <h3>{{ c.name }}</h3>
+    <div class="meta">委托方：{{ c.client }} · 楼型：{{ c.building_type }}</div>
+    <div class="row"><span>T0 计划开工</span><b>{{ c.t0 }}</b></div>
+    <div class="row"><span>计划交付</span><b>{{ c.delivery }}</b></div>
+    <div class="row"><span>总工期</span><b>{{ c.total_months }} 月</b></div>
+    <div class="row"><span>关键路径节点</span><b>{{ c.crit_nodes }} 个 · 里程碑 {{ c.crit_miles }}/13</b></div>
+    <div class="row" style="margin-top:10px">
+      {% if c.status=='进行中' %}<span class="badge b-ongoing">进行中</span>{% else %}<span class="badge b-delivered">{{ c.status }}</span>{% endif %}
+      {% if c.alerts %}<a class="badge b-alert" href="{{ url_for('project_alerts', pid=c.id) }}">⚠ {{ c.alerts }} 项预警</a>{% endif %}
+      {% if c.next_milestone %}<span class="muted" style="font-size:12px">下一里程碑：{{ c.next_milestone.name }}</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% if not cards %}<p class="muted">暂无项目，点击右上角「+ 新建项目」。</p>{% endif %}
+{% endblock %}

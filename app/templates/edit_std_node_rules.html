@@ -1,0 +1,192 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}编辑参数化分支规则 · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('std_nodes') }}">← 返回标准节点库</a>
+<h1 style="margin-top:10px">参数化分支规则</h1>
+<div class="lead">[{{ node.level }}] {{ node.name }}（序号 {{ node.seq or '—' }}）</div>
+
+<div class="rule-hint">
+  <b>规则语义：</b>分支之间 = <b>OR</b>（从上到下取<b>第一个全部条件命中</b>的分支，等同于 IF 链）；
+  每张分支<b>内部</b>的条件行 = <b>AND</b>（全部满足才命中）。最末可勾选「默认兜底」作为无条件 else。
+  例：<code>=IF(B8&lt;=4, L52-15, IF(AND(B8&gt;11,B8&lt;27), L52-15, L16+15))</code>
+  会被展平成 4 张卡片，外层反条件 <code>B8&gt;4</code> 并入后续卡片的条件行。
+</div>
+
+<form method="post" onsubmit="return collectRules()">
+  <input id="rules_json" name="rules_json" type="hidden">
+
+  <div id="branches"></div>
+
+  <button class="btn-ghost" onclick="addBranch()" type="button">+ 新增分支</button>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">保存全部分支</button>
+    <a class="btn-new" href="{{ url_for('edit_std_node', nid=node.id) }}">改默认依赖</a>
+  </div>
+  <div class="lead" style="margin-top:10px">保存后，<b>新建项目</b>套模板即按新规则排程（已发布项目的计划节点不受影响，需手动重算）。</div>
+</form>
+
+{% if logs %}
+<div class="rule-hint" style="margin-top:18px">
+  <b>变更历史</b>（标准库 · 最近 {{ logs|length }} 条）
+  <div class="log-list" style="margin-top:8px">
+    {% for l in logs %}
+    <div class="log-item">
+      <span class="log-time">{{ l.created_at }}</span>
+      <span class="log-act">{{ l.action }}</span>
+      <span class="log-op">{{ l.operator }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<style>
+.rule-hint{background:#f4f8fc;border:1px solid #dbe7f3;border-radius:8px;padding:10px 14px;font-size:13px;color:#334;margin:12px 0;line-height:1.7}
+.branch{border:1px solid #d7dde5;border-radius:10px;padding:14px 16px;margin:14px 0;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.branch-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.branch-no{font-weight:700;color:#2563eb;font-size:15px}
+.branch-def{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#445;font-weight:400;margin:0;cursor:pointer}
+.branch-def input[type=checkbox]{width:auto;margin:0}
+.branch-del{color:#c0392b;cursor:pointer;font-size:13px;border:none;background:none;padding:3px 8px;border-radius:6px}
+.branch-del:hover{background:#fdecec}
+.conds-title{font-size:12px;color:#6b7280;font-weight:600;margin:6px 0 2px}
+.conds{border-left:3px solid #e3e8ef;padding-left:12px;margin:4px 0}
+.cond{display:grid;grid-template-columns:210px 80px 200px 28px;gap:10px;align-items:center;margin:8px 0;justify-content:start}
+.cond select,.cond input{width:100%;min-width:0}
+.cond .val-slot{display:block;min-width:0}
+.cond-del{width:auto;color:#c0392b;cursor:pointer;border:none;background:none;font-size:15px;padding:0;line-height:1}
+.add-cond{margin:6px 0 2px}
+.branch-foot{display:grid;grid-template-columns:minmax(240px,1.4fr) 120px 130px minmax(150px,1fr);gap:12px 16px;align-items:start;margin-top:12px;border-top:1px dashed #e3e8ef;padding-top:12px}
+.fitem{display:flex;flex-direction:column;gap:5px;min-width:0}
+.fitem>label{display:block;font-size:12px;color:#6b7280;font-weight:600;margin:0}
+.fitem select,.fitem input{width:100%;min-width:0}
+.form-actions{margin-top:18px;display:flex;gap:10px;align-items:center}
+.btn-ghost{background:#fff;border:1px dashed #9bb4d0;color:#2563eb;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
+.btn-ghost:hover{background:#f2f7fd}
+.log-list{max-height:240px;overflow:auto;padding:4px 0}
+.log-item{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed #e3e8ef;font-size:12px}
+.log-time{color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
+.log-act{font-weight:600;color:#2563eb;white-space:nowrap}
+.log-op{color:#64748b;margin-left:auto;white-space:nowrap}
+@media(max-width:820px){
+  .cond{grid-template-columns:1fr 1fr}
+  .branch-foot{grid-template-columns:1fr 1fr}
+}
+</style>
+
+<script>
+const RULE_PARAMS = {{ rule_params|tojson }};
+const ALL_NODES = {{ all_nodes|tojson }};
+const INITIAL_RULES = {{ rules|tojson }};
+const OPS = ["<=",">=",">","<","=","<>"];
+const LEVELS = ["里程碑","一级","二级","二级*"];
+
+function paramOpts(code){ const p = RULE_PARAMS.find(x=>x.code===code); return p ? p.opts : null; }
+
+function valueControl(paramCode, current){
+  const opts = paramOpts(paramCode);
+  if (opts === null) return `<input type="number" class="cond-val" value="${current ?? ''}">`;
+  if (Array.isArray(opts) && opts.length){
+    const o = opts.map(v=>`<option ${v==current?'selected':''}>${v}</option>`).join('');
+    return `<select class="cond-val">${o}</select>`;
+  }
+  return `<input type="text" class="cond-val" value="${current ?? ''}">`;
+}
+
+function addCond(condsEl, cond){
+  cond = cond || {param:"",op:"<=",value:""};
+  const row = document.createElement("div");
+  row.className = "cond";
+  const psel = `<select class="cond-param">${RULE_PARAMS.map(p=>`<option value="${p.code}" ${p.code==cond.param?'selected':''}>${p.name}（${p.code}）</option>`).join('')}</select>`;
+  const osel = `<select class="cond-op">${OPS.map(o=>`<option ${o==cond.op?'selected':''}>${o}</option>`).join('')}</select>`;
+  row.innerHTML = psel + osel + `<span class="val-slot">${valueControl(cond.param, cond.value)}</span><button type="button" class="cond-del" onclick="this.parentNode.remove()">✕</button>`;
+  row.querySelector(".cond-param").addEventListener("change", function(){
+    const code = this.value;
+    const slot = row.querySelector(".val-slot");
+    slot.innerHTML = valueControl(code, "");
+  });
+  condsEl.appendChild(row);
+}
+
+function depOptions(selected){
+  let html = `<select class="res-dep"><option value="">— 请选择依赖节点 —</option>`;
+  for (const lv of LEVELS){
+    const grp = ALL_NODES.filter(n=>n.level===lv);
+    if (!grp.length) continue;
+    html += `<optgroup label="${lv}">`;
+    for (const n of grp){
+      const sel = (n.excel_row == selected) ? "selected" : "";
+      html += `<option value="${n.excel_row}" ${sel}>L${n.excel_row} · ${n.name}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  return html + `</select>`;
+}
+
+function addBranch(rule){
+  rule = rule || {conditions:[], depend_row:null, offset_days:0, direction:"之后", advanced:"", is_default:false};
+  const bd = document.createElement("div");
+  bd.className = "branch";
+  const idx = document.querySelectorAll("#branches .branch").length + 1;
+  bd.innerHTML = `
+    <div class="branch-head">
+      <span class="branch-no">分支 ${idx}</span>
+      <label class="branch-def"><input type="checkbox" class="def-chk" ${rule.is_default?'checked':''}> 默认兜底（无条件 else）</label>
+      <button type="button" class="branch-del" onclick="this.closest('.branch').remove();renumber()">删除分支</button>
+    </div>
+    <div class="conds-title">命中条件（以下全部满足 = AND；留空 = 无条件）</div>
+    <div class="conds"></div>
+    <button type="button" class="btn-ghost add-cond" onclick="addCond(this.previousElementSibling, {param:'topfloor',op:'<=',value:''})">+ 条件行</button>
+    <div class="branch-foot">
+      <div class="fitem"><label>依赖节点</label><span class="dep-slot">${depOptions(rule.depend_row)}</span></div>
+      <div class="fitem"><label>偏移天数</label><input type="number" class="res-days" value="${rule.offset_days ?? 0}"></div>
+      <div class="fitem"><label>方向</label><select class="res-dir"><option value="之后" ${rule.direction=='之后'?'selected':''}>之后（+）</option><option value="之前" ${rule.direction=='之前'?'selected':''}>之前（−）</option></select></div>
+      <div class="fitem"><label>高级表达式（可选）</label><input type="text" class="res-adv" placeholder="如 (topfloor-2)*5" value="${rule.advanced ?? ''}"></div>
+    </div>`;
+  const condsEl = bd.querySelector(".conds");
+  (rule.conditions || []).forEach(c => addCond(condsEl, c));
+  document.getElementById("branches").appendChild(bd);
+}
+
+function renumber(){
+  document.querySelectorAll("#branches .branch").forEach((bd,i)=>{
+    bd.querySelector(".branch-no").textContent = "分支 " + (i+1);
+  });
+}
+
+function collectRules(){
+  const branches = [];
+  document.querySelectorAll("#branches .branch").forEach(bd=>{
+    const isDef = bd.querySelector(".def-chk").checked;
+    const conds = [];
+    if (!isDef){
+      bd.querySelectorAll(".cond").forEach(cd=>{
+        const param = cd.querySelector(".cond-param").value;
+        const op = cd.querySelector(".cond-op").value;
+        const val = cd.querySelector(".cond-val").value;
+        if (param && op && val !== "") conds.push({param, op, value: val});
+      });
+    }
+    const depend = bd.querySelector(".res-dep").value;
+    const days = bd.querySelector(".res-days").value;
+    const dir = bd.querySelector(".res-dir").value;
+    const adv = (bd.querySelector(".res-adv").value || "").trim();
+    branches.push({
+      conditions: conds, depend_row: depend || null,
+      offset_days: days || 0, direction: dir, offset_expr: adv, is_default: isDef
+    });
+  });
+  document.getElementById("rules_json").value = JSON.stringify(branches);
+  return true;
+}
+
+window.addEventListener("DOMContentLoaded", function(){
+  if (INITIAL_RULES && INITIAL_RULES.length){
+    INITIAL_RULES.forEach(r => addBranch(r));
+  } else {
+    addBranch();
+  }
+});
+</script>
+{% endblock %}

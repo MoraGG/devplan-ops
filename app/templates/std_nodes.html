@@ -1,0 +1,39 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}标准节点库 · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('dashboard') }}">← 返回看板</a>
+<h1 style="margin-top:10px">标准节点库（相对工期规则）</h1>
+<div class="lead">共 {{ total }} 个节点（按 Excel 行序排列）。每个节点的「依赖关系 + 偏移天数」即相对工期引擎的唯一计算源——改这里 = 改规则，无需改代码。含参数化分支的节点点「分支规则」编辑 IF/AND 条件。</div>
+
+<div class="section">
+  <h2>全部标准节点（按 Excel 行序）<span class="pill">{{ total }} 个</span></h2>
+  <table>
+    <thead><tr>
+      <th style="width:40px">#</th>
+      <th style="width:72px">节点等级</th>
+      <th>节点名称</th>
+      <th style="width:96px">主责专业</th>
+      <th>相对工期规则</th>
+      <th style="width:88px">操作</th>
+    </tr></thead>
+    <tbody>
+    {% for n in nodes %}
+      <tr>
+        <td class="muted">{{ n.seq or '—' }}</td>
+        <td>{% if n.level %}<span class="lvtag lv-{{ n.level }}">{{ n.level }}</span>{% else %}—{% endif %}</td>
+        <td>{{ n.name }}</td>
+        <td>{{ n.prof }}</td>
+        <td class="muted">{{ n.dep_desc }}</td>
+        <td>
+          {% if n.id in rule_ids %}
+            <a href="{{ url_for('edit_std_node_rules', nid=n.id) }}">分支规则</a>
+          {% else %}
+            <a href="{{ url_for('edit_std_node', nid=n.id) }}">编辑依赖</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

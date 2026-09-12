@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width,initial-scale=1" name="viewport">
+<title>{% block title %}开发运营计划系统{% endblock %}</title>
+<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">房地产开发运营计划系统<span class="tag-ver">代建运营部 · MVP</span></div>
+  <nav>
+    <a href="{{ url_for('dashboard') }}">项目看板</a>
+    <a href="{{ url_for('std_nodes') }}">标准节点库</a>
+    <a href="{{ url_for('alert_center') }}">预警中心</a>
+    <a class="btn-new" href="{{ url_for('new_project') }}">+ 新建项目</a>
+  </nav>
+</header>
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+<footer class="foot">工期引擎仅基于 Excel L 列公式（std_node_dependency）拓扑递推，未读取集团标准期量文字。</footer>
+</body>
+</html>

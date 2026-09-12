@@ -1,0 +1,64 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}编辑标准节点 · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('std_nodes') }}">← 返回标准节点库</a>
+<h1 style="margin-top:10px">编辑节点规则</h1>
+<div class="lead">[{{ node.level }}] {{ node.name }}（序号 {{ node.seq or '—' }}）</div>
+
+{% if has_rule %}
+<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:10px 14px; font-size:13px; color:#7c3f12; margin:12px 0">
+  此节点含<b>参数化分支规则</b>（IF/AND 条件）。如需修改条件分支，请前往
+  <a href="{{ url_for('edit_std_node_rules', nid=node.id) }}">⚙ 编辑参数化分支规则</a>。</div>
+{% endif %}
+
+<div class="form-wrap">
+  <form method="post">
+    <label>主责专业</label>
+    <select name="profession_id">
+      {% for pr in profs %}<option value="{{ pr.id }}" {% if pr.id == node.profession_id %}selected{% endif %}>{{ pr.name }}</option>{% endfor %}
+    </select>
+
+    <label>是否为 T0 基准（开工日，偏移=0）</label>
+    <select id="baseSel" name="base_is_t0" onchange="toggleDep()">
+      <option value="0" {% if not (dep and dep.base_is_t0) %}selected{% endif %}>否（依赖其他节点）</option>
+      <option value="1" {% if dep and dep.base_is_t0 %}selected{% endif %}>是（T0 基准）</option>
+    </select>
+
+    <div id="depBox">
+      <label>依赖节点（按名称选择，括号内为原 Excel L 列行号）</label>
+      <select name="depend_row">
+        <option value>— 请选择 —</option>
+        {% for lvl in ['里程碑','一级','二级','二级*'] %}
+        <optgroup label="{{ lvl }}">
+          {% for an in all_nodes if an.level==lvl %}
+          <option value="{{ an.excel_row }}" {% if dep and dep.depend_row == an.excel_row %}selected{% endif %}>L{{ an.excel_row }} · {{ an.name }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </div>
+
+    <label>偏移天数</label>
+    <input name="offset_days" type="number" value="{% if dep %}{{ dep.offset_days|abs }}{% else %}0{% endif %}">
+
+    <label>方向</label>
+    <select name="direction">
+      <option value="之后" {% if not (dep and dep.direction == '之前') %}selected{% endif %}>之后（+）</option>
+      <option value="之前" {% if dep and dep.direction == '之前' %}selected{% endif %}>之前（−）</option>
+    </select>
+
+    <div class="lead" style="margin-top:12px">示例：依赖「项目启动」、之后 150 天 → 公式 `=L6+150`。<br>
+      保存后，新建项目套模板即按新规则排程（已发布项目不受影响）。</div>
+
+    <button class="btn" type="submit">保存规则</button>
+  </form>
+</div>
+
+<script>
+function toggleDep(){
+  var t0 = document.getElementById('baseSel').value == '1';
+  document.getElementById('depBox').style.display = t0 ? 'none' : 'block';
+}
+toggleDep();
+</script>
+{% endblock %}

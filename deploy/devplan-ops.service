@@ -1,0 +1,22 @@
+[Unit]
+Description=DevPlan Ops - 房地产开发运营计划系统（代建三级计划管理）
+After=network.target
+Wants=devplan-mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tang/devplan-ops/app
+# 业务当前日期与服务参数；数据库配置全部由环境变量注入，代码内不留明文口令
+Environment=PORT=5001
+Environment=DB_TYPE=mysql
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=3306
+Environment=DB_USER=root
+Environment=DB_PASS=
+Environment=DB_NAME=dev_plan
+ExecStart=/home/tang/devplan-ops/.venv/bin/python3 /home/tang/devplan-ops/app/app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

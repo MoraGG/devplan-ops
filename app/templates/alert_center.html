@@ -1,0 +1,33 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}预警中心 · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('dashboard') }}">← 返回看板</a>
+<h1 style="margin-top:10px">预警中心（全部项目）</h1>
+<div class="page-sub">进入本页会自动按业务当前日（{{ today }}）重算所有项目「内控」版预警，反映最新状态。</div>
+
+<div class="kpis">
+  <div class="kpi"><b style="color:{% if total %}var(--crit){% else %}var(--ok){% endif %}">{{ total }}</b><span>预警总数</span></div>
+</div>
+
+<a class="btn" href="{{ url_for('alert_rules') }}">⚙ 预警规则配置</a>
+
+<table style="margin-top:18px">
+  <thead><tr>
+    <th>项目</th><th style="width:70px">层级</th><th>节点</th><th style="width:90px">偏差(天)</th>
+    <th style="width:90px">节点状态</th><th>预警说明</th>
+  </tr></thead>
+  <tbody>
+  {% for r in records %}
+    <tr class="alert-row">
+      <td><a class="lnk" href="{{ url_for('project_detail', pid=r.project_id) }}">{{ r.project_name }}</a></td>
+      <td><span class="lvtag lv-{{ r.level }}">{{ r.level }}</span></td>
+      <td>{{ r.node_name }}</td>
+      <td><b class="{% if r.delay_days>=14 %}crit{% else %}warn-t{% endif %}">+{{ r.delay_days }}</b></td>
+      <td><span class="tag {% if r.node_status=='延期' %}warn{% else %}grey{% endif %}">{{ r.node_status }}</span></td>
+      <td>{{ r.message }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if not records %}<p class="muted">🎉 当前所有项目均无预警（或尚未计算）。</p>{% endif %}
+{% endblock %}

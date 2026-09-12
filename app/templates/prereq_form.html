@@ -1,0 +1,16 @@
+<meta charset="UTF-8">{# 前置参数表单片段：被 new_project / edit_project 复用。prereqs 已含 opts；existing 为已存值字典 #}
+{% for pr in prereqs %}
+<label>{{ pr.name }} <span class="muted" style="font-weight:400">（{{ pr.code }}）</span></label>
+{% if pr.opts is none %}
+  <input name="p{{ pr.id }}" placeholder="请输入数值" type="number" value="{{ existing.get('p'~pr.id) or '' }}">
+{% elif pr.opts|length > 0 %}
+  <select name="p{{ pr.id }}">
+    <option value>— 请选择 —</option>
+    {% for o in pr.opts %}
+    <option value="{{ o }}" {% if existing.get('p'~pr.id) == o %}selected{% endif %}>{{ o }}</option>
+    {% endfor %}
+  </select>
+{% else %}
+  <input name="p{{ pr.id }}" placeholder="可选项：{{ pr.options_json }}" value="{{ existing.get('p'~pr.id) or '' }}">
+{% endif %}
+{% endfor %}

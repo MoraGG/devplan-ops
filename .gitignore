@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 数据库运行时产物（种子与 DDL 已入库，devplan.db 作为初始状态随仓库分发）
+db/*.bak
+db/*.db-wal
+db/*.db-shm
+
+# 平台/会话文件
+.codebuddy/
+.workbuddy/
+.DS_Store
+
+# 本地环境变量（连接口令等，不入库）
+.env
+*.log

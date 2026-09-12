@@ -1,0 +1,29 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}{% if rule %}编辑预警规则{% else %}新增预警规则{% endif %} · 开发运营计划系统{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('alert_rules') }}">← 返回规则列表</a>
+<h1 style="margin-top:10px">{% if rule %}编辑预警规则{% else %}新增预警规则{% endif %}</h1>
+
+<div class="form-box">
+  <form method="post">
+    <label>节点层级</label>
+    <select name="level" required>
+      {% for lv in levels %}<option value="{{ lv }}" {% if rule and rule.level==lv %}selected{% endif %}>{{ lv }}</option>{% endfor %}
+    </select>
+
+    <label>计划版本</label>
+    <select name="plan_type" required>
+      {% for pt in plan_types %}<option value="{{ pt }}" {% if rule and rule.plan_type==pt %}selected{% endif %}>{{ pt }}</option>{% endfor %}
+    </select>
+
+    <label>阈值（天，偏差 ≥ 该值即预警）</label>
+    <input type="number" name="threshold_days" min="0" step="1" value="{{ rule.threshold_days if rule else 7 }}" required>
+
+    <label>通知对象</label>
+    <input type="text" name="notify_target" value="{{ rule.notify_target or '' }}" placeholder="如：代建运营部 / 项目总经理">
+
+    <button class="btn" type="submit">保存</button>
+    <a class="btn-ghost" href="{{ url_for('alert_rules') }}">取消</a>
+  </form>
+</div>
+{% endblock %}
