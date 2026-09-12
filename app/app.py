@@ -547,6 +547,9 @@ def generate_version(pid, plan_type, buffer_days=0):
                     (pid, plan_type, '基准'))
         vid = cur.lastrowid
     else:
+        # 先删本版本预警记录（alert_record.plan_node_id 外键约束 plan_node），否则 MySQL 下删 plan_node 报 1451
+        cur.execute("DELETE FROM alert_record WHERE plan_node_id IN "
+                    "(SELECT id FROM plan_node WHERE project_id=? AND version_id=?)", (pid, vid))
         cur.execute("DELETE FROM plan_node WHERE project_id=? AND version_id=?", (pid, vid))
     con.commit()
     eng.apply_to_project(pid, vid, plan_type, buffer_days=buffer_days)
