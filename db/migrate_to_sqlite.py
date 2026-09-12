@@ -42,7 +42,9 @@ def serialize(v):
 
 
 def main():
-    mcon = pymysql.connect(**MYSQL, cursorclass=pymysql.cursors.DictCursor)
+    # autocommit=True：避免 SELECT 长事务长期持有元数据锁(MDL)，
+    # 否则并发/后续 DDL（如 load_seed 的 DROP TABLE）会被 MDL 阻塞。
+    mcon = pymysql.connect(**MYSQL, cursorclass=pymysql.cursors.DictCursor, autocommit=True)
     mcur = mcon.cursor()
     mcur.execute("SHOW TABLES")
     tables = [list(r.values())[0] for r in mcur.fetchall()]

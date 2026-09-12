@@ -63,11 +63,13 @@ for idx, r in enumerate(rows):
     rownum_map[er] = len(nodes)
 
 DB_NAME = os.environ.get("DB_NAME", "dev_plan")
+# autocommit=True：否则 information_schema 查询会开长事务并持有 MDL，
+# 一旦进程中断，后续 DROP/CREATE TABLE 会被 "Waiting for table metadata lock" 阻塞。
 con = pymysql.connect(host=os.environ.get("DB_HOST", "127.0.0.1"),
                       port=int(os.environ.get("DB_PORT", "3306")),
                       user=os.environ.get("DB_USER", "root"),
                       password=os.environ.get("DB_PASS", ""),
-                      database=DB_NAME, charset="utf8mb4")
+                      database=DB_NAME, charset="utf8mb4", autocommit=True)
 cur = con.cursor()
 
 # 清空

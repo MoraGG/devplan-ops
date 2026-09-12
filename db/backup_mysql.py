@@ -33,7 +33,9 @@ def lit(v):
 
 
 def main():
-    con = pymysql.connect(**MYSQL, cursorclass=pymysql.cursors.DictCursor)
+    # autocommit=True 很关键：否则 SELECT 会开启长事务并【持续持有元数据锁(MDL)】，
+    # 进程异常退出后锁不释放，后续 DROP TABLE 会全部卡在 "Waiting for table metadata lock"。
+    con = pymysql.connect(**MYSQL, cursorclass=pymysql.cursors.DictCursor, autocommit=True)
     cur = con.cursor()
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = os.path.join(OUTDIR, f"dev_plan_{ts}.sql")
