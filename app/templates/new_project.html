@@ -24,6 +24,13 @@
       <option value="暂停">暂停</option>
     </select>
 
+    <h3 style="margin-top:22px; font-size:15px">三版期量裕度（天）</h3>
+    <div class="lead">考核版 / 履约版计划日 = 内控版 + 对应裕度（默认 0，即三版一致）。如需考核留余量，可填正值。</div>
+    <label>考核版裕度（天）</label>
+    <input name="buffer_kh" type="number" value="0">
+    <label>履约版裕度（天）</label>
+    <input name="buffer_ly" type="number" value="0">
+
     <h3 style="margin-top:22px; font-size:15px">前置信息（项目参数）</h3>
     <div class="lead">用于后续参数化期量（当前版本仅记录，不影响排程）。</div>
     {% include "prereq_form.html" %}

@@ -130,22 +130,23 @@ def new_project():
         bt_id = int(request.form["building_type_id"])
         t0 = request.form["plan_start"]
         status = request.form.get("status", "进行中")
+        buffer_kh = int(request.form.get("buffer_kh") or 0)
+        buffer_ly = int(request.form.get("buffer_ly") or 0)
         prereq = {f"p{pr['id']}": request.form.get(f"p{pr['id']}") for pr in prereqs}
         prereq_json = json.dumps(prereq, ensure_ascii=False)
         # 交付日先按引擎预估（套模板后回填）
         eng = engine_for(t0, prereq_json)
         d = eng.to_dict(project=name)
         cur.execute(
-            "INSERT INTO project(name,client,building_type_id,plan_start,plan_deliver,status,prereq_json) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (name, client, bt_id, t0, d["delivery_date"], status, prereq_json))
+            "INSERT INTO project(name,client,building_type_id,plan_start,plan_deliver,status,prereq_json,buffer_kh,buffer_ly) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (name, client, bt_id, t0, d["delivery_date"], status, prereq_json, buffer_kh, buffer_ly))
         pid = cur.lastrowid
-        cur.execute(
-            "INSERT INTO plan_version(project_id,version_no,plan_type,status) VALUES(?,1,'内控','基准')",
-            (pid,))
-        vid = cur.lastrowid
         con.commit(); cur.close(); con.close()
-        n = eng.apply_to_project(pid, vid, "内控")
+        # 生成三版（内控 + 考核 + 履约），考核/履约版 = 内控 + 项目级期量裕度
+        generate_version(pid, "内控", 0)
+        generate_version(pid, "考核", buffer_kh)
+        generate_version(pid, "履约", buffer_ly)
         # 回写交付日
         con = db(); cur = con.cursor()
         cur.execute("UPDATE project SET plan_deliver=? WHERE id=?", (d["delivery_date"], pid))
@@ -170,25 +171,26 @@ def edit_project(pid):
         bt_id = int(request.form["building_type_id"])
         t0 = request.form["plan_start"]
         status = request.form.get("status", "进行中")
+        buffer_kh = int(request.form.get("buffer_kh") or 0)
+        buffer_ly = int(request.form.get("buffer_ly") or 0)
         prereq = {f"p{pr['id']}": request.form.get(f"p{pr['id']}") for pr in prereqs}
         prereq_json = json.dumps(prereq, ensure_ascii=False)
         old_t0 = p["plan_start"]
         old_prereq = p["prereq_json"]
+        old_kh = p.get("buffer_kh") or 0
+        old_ly = p.get("buffer_ly") or 0
         cur.execute(
-            "UPDATE project SET name=?,client=?,building_type_id=?,plan_start=?,status=?,prereq_json=? WHERE id=?",
-            (name, client, bt_id, t0, status, prereq_json, pid))
-        # T0 或前置参数改变则重算交付日并重新生成该版本计划节点
-        if t0 != old_t0 or prereq_json != old_prereq:
-            eng = engine_for(t0, prereq_json, pid)
-            d = eng.to_dict(project=name)
+            "UPDATE project SET name=?,client=?,building_type_id=?,plan_start=?,status=?,prereq_json=?,buffer_kh=?,buffer_ly=? WHERE id=?",
+            (name, client, bt_id, t0, status, prereq_json, buffer_kh, buffer_ly, pid))
+        # 任一影响计划的因素改变 → 重新生成三版（保留 actual_*/status）
+        if t0 != old_t0 or prereq_json != old_prereq or buffer_kh != old_kh or buffer_ly != old_ly:
+            d = engine_for(t0, prereq_json, pid).to_dict(project=name)
             cur.execute("UPDATE project SET plan_deliver=? WHERE id=?", (d["delivery_date"], pid))
-            cur.execute("SELECT id FROM plan_version WHERE project_id=? AND plan_type='内控' ORDER BY id LIMIT 1", (pid,))
-            vr = cur.fetchone(); vid = vr["id"] if vr else None
-            if vid:
-                cur.execute("DELETE FROM plan_node WHERE project_id=? AND version_id=?", (pid, vid))
-                con.commit()
-                eng.apply_to_project(pid, vid, "内控")
-        con.commit(); cur.close(); con.close()
+            con.commit(); cur.close(); con.close()
+            regenerate_all_versions(pid)
+        else:
+            con.commit(); cur.close(); con.close()
+            ensure_all_versions(pid)
         return redirect(url_for("project_detail", pid=pid))
     return render_template("edit_project.html", p=p, bts=bts, prereqs=prereqs, existing=existing)
 
@@ -203,10 +205,14 @@ def project_detail(pid):
         cur.close(); con.close(); return "项目不存在", 404
     cur.execute("SELECT id,name FROM building_type")
     bt = {r["id"]: r["name"] for r in cur.fetchall()}
-    # 基准内控版本
-    cur.execute("SELECT id FROM plan_version WHERE project_id=? AND plan_type='内控' ORDER BY id LIMIT 1", (pid,))
-    vr = cur.fetchone(); vid = vr["id"] if vr else None
-    # 计划节点（按 Excel 行序全量展示）
+    # 懒生成缺失版本（保证三版齐备，保留已填报 actual_*）
+    ensure_all_versions(pid)
+    # 版本切换（?v=内控/考核/履约，默认内控）
+    cur_v = request.args.get("v", "内控")
+    if cur_v not in PLAN_TYPES:
+        cur_v = "内控"
+    vid = version_vid(pid, cur_v)
+    # 计划节点（按 Excel 行序全量展示，随所选版本切换 finish_inner）
     cur.execute(
         "SELECT pn.id,pn.level,pn.seq,pn.name,pn.std_node_id,pn.finish_inner,pn.status,pr.name AS prof, sn.excel_row "
         "FROM plan_node pn LEFT JOIN profession pr ON pn.profession_id=pr.id "
@@ -247,6 +253,7 @@ def project_detail(pid):
     return render_template("project_detail.html", p=p, building_type=bt.get(p["building_type_id"], "—"),
                            data=d, rows=rows, rule_ids=rule_ids, override_ids=override_ids,
                            rule_params=rule_params, all_nodes=all_nodes, alert_count=alert_count,
+                           cur_version=cur_v, plan_types=PLAN_TYPES,
                            crit_miles=sum(1 for m in d["milestones"] if m["critical"]))
 
 
@@ -504,6 +511,151 @@ def baseline_vid(pid):
     return r["id"] if r else None
 
 
+def _as_date(v):
+    """字符串/DATE → date 对象；无法解析返回 None。"""
+    if v is None:
+        return None
+    if isinstance(v, datetime.date):
+        return v
+    try:
+        return datetime.date.fromisoformat(str(v)[:10])
+    except Exception:
+        return None
+
+
+def version_vid(pid, plan_type):
+    """取某项目某 plan_type 的 plan_version id；无则 None（通用版 baseline_vid）。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id FROM plan_version WHERE project_id=? AND plan_type=? ORDER BY id LIMIT 1",
+                (pid, plan_type))
+    r = cur.fetchone(); cur.close(); con.close()
+    return r["id"] if r else None
+
+
+def generate_version(pid, plan_type, buffer_days=0):
+    """生成/重生成某版 plan_node（先删后插，整版覆盖）。基于当前生效引擎 + 项目 override。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT plan_start,prereq_json FROM project WHERE id=?", (pid,))
+    pj = cur.fetchone(); con.close()
+    if not pj:
+        return None
+    eng = engine_for(pj["plan_start"], pj["prereq_json"], pid)
+    vid = version_vid(pid, plan_type)
+    con = db(); cur = con.cursor()
+    if vid is None:
+        cur.execute("INSERT INTO plan_version(project_id,version_no,plan_type,status) VALUES(?,1,?,?)",
+                    (pid, plan_type, '基准'))
+        vid = cur.lastrowid
+    else:
+        cur.execute("DELETE FROM plan_node WHERE project_id=? AND version_id=?", (pid, vid))
+    con.commit()
+    eng.apply_to_project(pid, vid, plan_type, buffer_days=buffer_days)
+    con.close()
+    return vid
+
+
+def regenerate_all_versions(pid):
+    """内控/考核/履约三版统一重生成（保留已填报 actual_*/status），并刷新三版预警。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT buffer_kh,buffer_ly FROM project WHERE id=?", (pid,))
+    b = cur.fetchone()
+    # 备份现有 actual（按 std_node_id，三版值相同，取任意版即可）
+    cur.execute("SELECT std_node_id,actual_start,actual_finish,progress_pct FROM plan_node "
+                "WHERE project_id=?", (pid,))
+    actual_map = {r["std_node_id"]: r for r in cur.fetchall()}
+    con.close()
+    kh = (b["buffer_kh"] or 0) if b else 0
+    ly = (b["buffer_ly"] or 0) if b else 0
+    for pt, buf in (("内控", 0), ("考核", kh), ("履约", ly)):
+        vid = generate_version(pid, pt, buf)
+        if vid is None or not actual_map:
+            continue
+        con = db(); cur = con.cursor()
+        for snid, r in actual_map.items():
+            cur.execute(
+                "UPDATE plan_node SET actual_start=?,actual_finish=?,progress_pct=? "
+                "WHERE project_id=? AND version_id=? AND std_node_id=?",
+                (r["actual_start"], r["actual_finish"], r["progress_pct"], pid, vid, snid))
+        con.commit(); con.close()
+    for pt in ("内控", "考核", "履约"):
+        compute_alerts(pid, pt, as_of=TODAY)
+
+
+def ensure_all_versions(pid):
+    """懒生成缺失的版本（仅建缺失的，不覆盖已存在版本，保留 actual_*/status）。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT buffer_kh,buffer_ly FROM project WHERE id=?", (pid,))
+    b = cur.fetchone(); con.close()
+    if not b:
+        return
+    kh = b["buffer_kh"] or 0
+    ly = b["buffer_ly"] or 0
+    if version_vid(pid, "内控") is None:
+        generate_version(pid, "内控", 0)
+    if version_vid(pid, "考核") is None:
+        generate_version(pid, "考核", kh)
+    if version_vid(pid, "履约") is None:
+        generate_version(pid, "履约", ly)
+
+
+def save_actual(pid, rows_actual):
+    """同步写三版 plan_node 的 actual_*（同一事实，三版一致），并刷新三版预警。"""
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id FROM plan_version WHERE project_id=?", (pid,))
+    vids = [r["id"] for r in cur.fetchall()]
+    con.close()
+    con = db(); cur = con.cursor()
+    for vid in vids:
+        for ra in rows_actual:
+            cur.execute(
+                "UPDATE plan_node SET actual_start=?,actual_finish=?,progress_pct=? "
+                "WHERE project_id=? AND version_id=? AND std_node_id=?",
+                (ra["actual_start"], ra["actual_finish"], ra["progress_pct"], pid, vid, ra["std_node_id"]))
+    con.commit(); con.close()
+    for pt in ("内控", "考核", "履约"):
+        compute_alerts(pid, pt, as_of=TODAY)
+
+
+def compare_rows(pid):
+    """三版并排对比数据：节点元信息 + 内控/考核/履约 finish_inner + actual_finish + 偏差。"""
+    con = db(); cur = con.cursor()
+    vers = {}
+    for pt in ("内控", "考核", "履约"):
+        vid = version_vid(pid, pt)
+        if vid is None:
+            vers[pt] = {}
+            continue
+        cur.execute("SELECT std_node_id,finish_inner,actual_finish,status FROM plan_node "
+                    "WHERE project_id=? AND version_id=?", (pid, vid))
+        vers[pt] = {r["std_node_id"]: dict(r) for r in cur.fetchall()}
+    cur.execute("SELECT sn.id,sn.excel_row,sn.level,sn.seq,sn.name,pr.name AS prof "
+                "FROM std_node sn LEFT JOIN profession pr ON sn.profession_id=pr.id ORDER BY sn.excel_row")
+    nodes = cur.fetchall()
+    con.close()
+    out = []
+    for n in nodes:
+        snid = n["id"]
+        ne = vers["内控"].get(snid, {})
+        kh = vers["考核"].get(snid, {})
+        ly = vers["履约"].get(snid, {})
+        fi_n = ne.get("finish_inner"); fi_k = kh.get("finish_inner"); fi_l = ly.get("finish_inner")
+        af = ne.get("actual_finish")
+        kh_diff = None; ly_diff = None; af_diff = None
+        if fi_k and fi_n:
+            kh_diff = (_as_date(fi_k) - _as_date(fi_n)).days
+        if fi_l and fi_n:
+            ly_diff = (_as_date(fi_l) - _as_date(fi_n)).days
+        if af and fi_n:
+            af_diff = (_as_date(af) - _as_date(fi_n)).days
+        out.append(dict(
+            std_node_id=snid, excel_row=n["excel_row"], level=n["level"], seq=n["seq"],
+            name=n["name"], prof=n["prof"],
+            fi_inner=fi_n, fi_kh=fi_k, fi_ly=fi_l, actual=af,
+            kh_diff=kh_diff, ly_diff=ly_diff, af_diff=af_diff,
+            status=ne.get("status")))
+    return out
+
+
 def recompute_project_finish(pid, vid, t0, prereq_json):
     """按当前（含项目级 override 的）引擎重算该版本所有节点的 finish_inner（保留 actual 等填报），并回写交付日。"""
     if vid is None:
@@ -664,7 +816,8 @@ def edit_project_node(pid, nid):
         con = db(); cur = con.cursor()
         cur.execute("SELECT plan_start,prereq_json FROM project WHERE id=?", (pid,))
         pj = cur.fetchone(); con.close()
-        recompute_project_finish(pid, vid, pj["plan_start"], pj["prereq_json"])
+        # 单节点调整后重新生成三版（保留 actual_*/status，并刷新三版预警）
+        regenerate_all_versions(pid)
         return jsonify(ok=True, mode=m)
 
     con = db(); cur = con.cursor()
@@ -674,6 +827,65 @@ def edit_project_node(pid, nid):
     return jsonify(dict(nid=nid, name=node["name"], level=node["level"], seq=node["seq"],
                         has_rule=has_rule, current_mode=mode, fixed_date=fixed_date,
                         current_date=fin["finish_inner"] if fin else None, rules=rules, logs=logs))
+
+
+# ---------------- 实际进度填报（独立页） ----------------
+@app.route("/project/<int:pid>/fill", methods=["GET", "POST"])
+def project_fill(pid):
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id,name,client,status FROM project WHERE id=?", (pid,))
+    p = cur.fetchone()
+    if not p:
+        cur.close(); con.close(); return "项目不存在", 404
+    if request.method == "POST":
+        con.close()
+        actual = []
+        snids = set()
+        for k in request.form:
+            for pref in ("actual_start_", "actual_finish_", "progress_"):
+                if k.startswith(pref):
+                    snids.add(k[len(pref):])
+        for snid in snids:
+            snid_i = int(snid)
+            as_ = (request.form.get(f"actual_start_{snid}") or "").strip()
+            af = (request.form.get(f"actual_finish_{snid}") or "").strip()
+            prog = (request.form.get(f"progress_{snid}") or "").strip()
+            as_v = _as_date(as_) if as_ else None
+            af_v = _as_date(af) if af else None
+            prog_v = int(prog) if (prog.isdigit()) else 0
+            prog_v = max(0, min(100, prog_v))
+            actual.append(dict(std_node_id=snid_i,
+                                actual_start=as_v.isoformat() if as_v else None,
+                                actual_finish=af_v.isoformat() if af_v else None,
+                                progress_pct=prog_v))
+        save_actual(pid, actual)
+        return redirect(url_for("project_detail", pid=pid))
+    # GET：列出内控版全部节点，预填已有 actual_*
+    ensure_all_versions(pid)
+    vid = version_vid(pid, "内控")
+    cur.execute(
+        "SELECT pn.std_node_id,pn.level,pn.seq,pn.name,pn.finish_inner,pn.actual_start,pn.actual_finish,"
+        "pn.progress_pct,pn.status,pr.name AS prof,sn.excel_row "
+        "FROM plan_node pn LEFT JOIN profession pr ON pn.profession_id=pr.id "
+        "LEFT JOIN std_node sn ON pn.std_node_id=sn.id "
+        "WHERE pn.project_id=? AND pn.version_id=? ORDER BY sn.excel_row", (pid, vid))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return render_template("project_fill.html", p=p, rows=rows, today=TODAY)
+
+
+# ---------------- 三版计划对比 ----------------
+@app.route("/project/<int:pid>/compare")
+def project_compare(pid):
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id,name,client FROM project WHERE id=?", (pid,))
+    p = cur.fetchone()
+    if not p:
+        cur.close(); con.close(); return "项目不存在", 404
+    ensure_all_versions(pid)
+    rows = compare_rows(pid)
+    con.close()
+    return render_template("project_compare.html", p=p, rows=rows, today=TODAY)
 
 
 # ---------------- 预警引擎 ----------------
@@ -729,7 +941,11 @@ def alert_rule_delete(rid):
 @app.route("/project/<int:pid>/compute-alerts", methods=["POST"])
 def project_compute_alerts(pid):
     plan_type = request.form.get("plan_type", "内控")
-    compute_alerts(pid, plan_type, as_of=TODAY)
+    if plan_type == "全部":
+        for pt in PLAN_TYPES:
+            compute_alerts(pid, pt, as_of=TODAY)
+    else:
+        compute_alerts(pid, plan_type, as_of=TODAY)
     return redirect(url_for("project_alerts", pid=pid))
 
 
@@ -759,7 +975,8 @@ def alert_center():
     cur.execute("SELECT id FROM project ORDER BY id")
     pids = [r["id"] for r in cur.fetchall()]
     for pid in pids:
-        compute_alerts(pid, "内控", as_of=TODAY)
+        for pt in PLAN_TYPES:
+            compute_alerts(pid, pt, as_of=TODAY)
     cur.execute(
         "SELECT ar.id,ar.plan_node_id,ar.delay_days,ar.message,ar.triggered_at,pn.level,pn.name AS node_name,"
         "pn.status AS node_status,pr.name AS project_name,pr.id AS project_id "

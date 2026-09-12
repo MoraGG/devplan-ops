@@ -121,6 +121,8 @@ CREATE TABLE project (
   id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(160) NOT NULL, client VARCHAR(160),
   building_type_id INT, plan_start DATE, plan_deliver DATE,
   status VARCHAR(16) DEFAULT '进行中', prereq_json TEXT,
+  buffer_kh INT DEFAULT 0,           -- 考核版相对内控的期量裕度（天），考核版 finish_inner = 内控 + buffer_kh
+  buffer_ly INT DEFAULT 0,           -- 履约版相对内控的期量裕度（天），履约版 finish_inner = 内控 + buffer_ly
   FOREIGN KEY (building_type_id) REFERENCES building_type(id)
 ) ENGINE=InnoDB;
 

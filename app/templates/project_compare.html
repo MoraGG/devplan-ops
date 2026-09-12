@@ -1,0 +1,55 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}三版计划对比 · {{ p.name }}{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('project_detail', pid=p.id) }}">← 返回项目详情</a>
+<h1 style="margin-top:10px">三版计划对比 · {{ p.name }}</h1>
+<div class="lead">同节点并排对比 内控 / 考核 / 履约 三版计划完成日（考核/履约版 = 内控版 + 项目级期量裕度），及实际完成偏差。代建管控特色交付物。</div>
+
+<div class="toolbar">
+  <a class="btn" href="{{ url_for('project_fill', pid=p.id) }}">📋 实际进度填报</a>
+  <span class="muted" style="font-size:12px">业务当前日：{{ today }}</span>
+</div>
+
+<div class="section">
+  <h2>节点计划日三版对比（共 {{ rows|length }} 个）</h2>
+  <table>
+    <thead><tr>
+      <th style="width:46px">序号</th>
+      <th style="width:72px">等级</th>
+      <th>节点名称</th>
+      <th style="width:120px">内控完成</th>
+      <th style="width:150px">考核完成</th>
+      <th style="width:150px">履约完成</th>
+      <th style="width:120px">实际完成</th>
+      <th style="width:96px">内控→考核</th>
+      <th style="width:96px">内控→履约</th>
+      <th style="width:96px">实际−内控</th>
+      <th style="width:72px">状态</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="muted">{{ r.seq or '—' }}</td>
+        <td>{% if r.level %}<span class="lvtag lv-{{ r.level }}">{{ r.level }}</span>{% else %}—{% endif %}</td>
+        <td>{{ r.name }}</td>
+        <td class="fin-cell">{{ r.fi_inner or '—' }}</td>
+        <td class="{% if r.fi_kh %}fin-cell{% endif %}">{{ r.fi_kh or '—' }}</td>
+        <td class="{% if r.fi_ly %}fin-cell{% endif %}">{{ r.fi_ly or '—' }}</td>
+        <td>{{ r.actual or '—' }}</td>
+        <td>{% if r.kh_diff is not none %}{% if r.kh_diff > 0 %}<span class="diff-plus">+{{ r.kh_diff }}天</span>{% elif r.kh_diff < 0 %}<span class="diff-minus">{{ r.kh_diff }}天</span>{% else %}<span class="muted">一致</span>{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if r.ly_diff is not none %}{% if r.ly_diff > 0 %}<span class="diff-plus">+{{ r.ly_diff }}天</span>{% elif r.ly_diff < 0 %}<span class="diff-minus">{{ r.ly_diff }}天</span>{% else %}<span class="muted">一致</span>{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if r.af_diff is not none %}{% if r.af_diff > 0 %}<span class="diff-bad">+{{ r.af_diff }}天</span>{% elif r.af_diff < 0 %}<span class="diff-good">{{ r.af_diff }}天</span>{% else %}<span class="muted">准时</span>{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if r.status == '延期' %}<span class="lvtag lv-里程碑">延期</span>{% elif r.status == '预警' %}<span class="lvtag lv-一级">预警</span>{% else %}<span class="muted">正常</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+.diff-plus{color:#b45309;font-weight:600}
+.diff-minus{color:#047857;font-weight:600}
+.diff-bad{color:#c0392b;font-weight:700}
+.diff-good{color:#047857;font-weight:600}
+</style>
+{% endblock %}

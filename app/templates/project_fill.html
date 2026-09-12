@@ -1,0 +1,49 @@
+<meta charset="UTF-8">{% extends "base.html" %}
+{% block title %}实际进度填报 · {{ p.name }}{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('project_detail', pid=p.id) }}">← 返回项目详情</a>
+<h1 style="margin-top:10px">实际进度填报 · {{ p.name }}</h1>
+<div class="lead">逐节点录入实际开始 / 实际完成 / 完成百分比。保存后系统自动对比三版计划日重算预警（实际进度同步写入内控/考核/履约三版）。</div>
+
+<div class="toolbar">
+  <span class="muted" style="font-size:12px">业务当前日：{{ today }}（未填实际完成时，按此日判定逾期/临近）</span>
+</div>
+
+<form method="post" action="{{ url_for('project_fill', pid=p.id) }}">
+  <div class="section">
+    <h2>全部计划节点（按 Excel 行序 · 共 {{ rows|length }} 个）</h2>
+    <table>
+      <thead><tr>
+        <th style="width:46px">序号</th>
+        <th style="width:72px">节点等级</th>
+        <th>节点名称</th>
+        <th style="width:96px">主责专业</th>
+        <th style="width:120px">计划完成(内控)</th>
+        <th style="width:140px">实际开始</th>
+        <th style="width:140px">实际完成</th>
+        <th style="width:96px">完成%</th>
+        <th style="width:72px">状态</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="muted">{{ r.seq or '—' }}</td>
+          <td>{% if r.level %}<span class="lvtag lv-{{ r.level }}">{{ r.level }}</span>{% else %}—{% endif %}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.prof or '—' }}</td>
+          <td class="fin-cell">{{ r.finish_inner or '—' }}</td>
+          <td><input type="date" name="actual_start_{{ r.std_node_id }}" value="{{ r.actual_start or '' }}"></td>
+          <td><input type="date" name="actual_finish_{{ r.std_node_id }}" value="{{ r.actual_finish or '' }}"></td>
+          <td><input type="number" min="0" max="100" name="progress_{{ r.std_node_id }}" value="{{ r.progress_pct or 0 }}" style="width:72px"></td>
+          <td>{% if r.status == '延期' %}<span class="lvtag lv-里程碑">延期</span>{% elif r.status == '预警' %}<span class="lvtag lv-一级">预警</span>{% else %}<span class="muted">正常</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="form-actions" style="margin:14px 0 30px">
+    <button class="btn" type="submit">保存实际进度</button>
+    <a class="btn-cancel" href="{{ url_for('project_detail', pid=p.id) }}">取消</a>
+  </div>
+</form>
+{% endblock %}

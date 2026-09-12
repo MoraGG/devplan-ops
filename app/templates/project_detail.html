@@ -8,11 +8,20 @@
 
 <div class="toolbar">
   <a class="btn" href="{{ url_for('project_alerts', pid=p.id) }}">⚠ 预警中心（{{ alert_count }}）</a>
+  <a class="btn" href="{{ url_for('project_fill', pid=p.id) }}">📋 实际进度填报</a>
+  <a class="btn" href="{{ url_for('project_compare', pid=p.id) }}">🔀 三版对比</a>
   <form method="post" action="{{ url_for('project_compute_alerts', pid=p.id) }}" style="display:inline">
-    <input type="hidden" name="plan_type" value="内控">
-    <button class="btn-ghost" type="submit">重新计算预警（内控）</button>
+    <input type="hidden" name="plan_type" value="全部">
+    <button class="btn-ghost" type="submit">重算全部预警</button>
   </form>
   <span class="muted" style="font-size:12px">尚未填报实际进度时，按业务当前日（{{ TODAY }}）判定逾期/临近</span>
+</div>
+<div class="ver-switcher">
+  查看版本：
+  {% for v in plan_types %}
+    <a class="vtab {% if v==cur_version %}active{% endif %}" href="{{ url_for('project_detail', pid=p.id, v=v) }}">{{ v }}</a>
+  {% endfor %}
+  {% if cur_version != '内控' %}<span class="muted" style="margin-left:10px">（里程碑/关键路径仍按内控基线；节点表计划日随版本切换）</span>{% endif %}
 </div>
 
 <div class="kpis">
@@ -58,7 +67,7 @@
       <th style="width:72px">节点等级</th>
       <th>节点名称</th>
       <th style="width:96px">主责专业</th>
-      <th style="width:120px">计划完成(内控)</th>
+      <th style="width:120px">计划完成({{ cur_version }})</th>
       <th style="width:84px">距今天数</th>
       <th style="width:72px">关键路径</th>
       <th style="width:120px">操作</th>
@@ -126,6 +135,10 @@
 </div>
 
 <style>
+.ver-switcher{display:flex;align-items:center;gap:6px;margin:10px 0 4px;font-size:13px;flex-wrap:wrap}
+.ver-switcher .vtab{padding:5px 12px;border:1px solid #cbd5e1;border-radius:8px;color:#475569;text-decoration:none;font-weight:600;background:#fff}
+.ver-switcher .vtab:hover{background:#f2f7fd}
+.ver-switcher .vtab.active{background:#4f46e5;color:#fff;border-color:#4f46e5}
 .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow:auto}
 .modal{background:#fff;border-radius:14px;width:min(820px,100%);box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:90vh}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef1f5;flex:0 0 auto}

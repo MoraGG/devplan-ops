@@ -284,14 +284,18 @@ class RelativeDateEngine:
         )
 
     # ---------- 4. 套模板生成项目计划节点（写入 plan_node） ----------
-    def apply_to_project(self, project_id, version_id, plan_type="内控"):
+    def apply_to_project(self, project_id, version_id, plan_type="内控", buffer_days=0):
+        """套模板生成某版 plan_node。
+        finish_inner = T0 + 相对偏移 + buffer_days（版本期量裕度）。
+        内控版 buffer_days=0；考核/履约版由调用方传入项目级 buffer（如 +14 天）。"""
         if not hasattr(self, "offset"):
             self.compute_offsets()
         con = get_conn(); cur = con.cursor()
         rows = []
         for nid, n in self.nodes.items():
             o = self.offset.get(nid)
-            fin = (self.t0 + datetime.timedelta(days=o)).isoformat() if o is not None else None
+            base = (self.t0 + datetime.timedelta(days=o)) if o is not None else None
+            fin = (base + datetime.timedelta(days=buffer_days)).isoformat() if base is not None else None
             rows.append((project_id, version_id, nid, n["level"], n["seq"], n["name"],
                          n["profession_id"], fin, None, None, None, None, '正常'))
         cur.executemany(
@@ -308,7 +312,8 @@ def compute_alerts(project_id, plan_type="内控", as_of=None):
     偏差天数 ≥ 阈值则写 alert_record 并刷新 plan_node.status。
 
     逻辑：
-      - 计划完成日 P 按 plan_type 取（考核→finish_assess，履约→finish_perform，均回退 finish_inner）；
+      - 计划完成日 P 取该版本 plan_node.finish_inner（各版本 finish_inner 已是该版计划日；
+        考核/履约版 = 内控版 + 项目级 buffer，由 apply_to_project 写入）；
       - 参考日 ref：有 actual_finish 用实际完成日，否则用 as_of（业务当前日）；
       - 偏差 dev = (ref − P).days；dev ≥ threshold_days 即命中；
       - 有实际完成且 dev>0 → 节点状态「延期」；否则按 dev 正负 → 「延期」/「预警」。
@@ -338,7 +343,7 @@ def compute_alerts(project_id, plan_type="内控", as_of=None):
             "(SELECT id FROM plan_node WHERE project_id=? AND version_id=?)",
             (project_id, vid))
         cur.execute(
-            "SELECT id,level,name,finish_inner,finish_assess,finish_perform,actual_finish "
+            "SELECT id,level,name,finish_inner,actual_finish "
             "FROM plan_node WHERE project_id=? AND version_id=?", (project_id, vid))
         nodes = cur.fetchall()
         hits = []
@@ -347,12 +352,7 @@ def compute_alerts(project_id, plan_type="内控", as_of=None):
             rule = rules.get(n["level"])
             if not rule:
                 continue
-            if plan_type == "考核":
-                P = _as_date(n["finish_assess"]) or _as_date(n["finish_inner"])
-            elif plan_type == "履约":
-                P = _as_date(n["finish_perform"]) or _as_date(n["finish_inner"])
-            else:
-                P = _as_date(n["finish_inner"])
+            P = _as_date(n["finish_inner"])
             if P is None:
                 continue
             af = _as_date(n["actual_finish"])
