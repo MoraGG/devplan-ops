@@ -39,8 +39,8 @@ for p in $(pgrep -f "app.py"); do [ "$p" != "$$" ] && kill "$p"; done
 
 ## 五、已知缺口（P1，按你之前定的优先级）
 - **预警逻辑**：✅ 已实现（2026-09-12），见第七节。
-- **三版计划**（考核版/履约版）：目前仅生成"内控"版，其余版本无生成逻辑。
-- **实际进度填报**：`plan_node.actual_start`/`actual_finish` 等实际字段已有录入入口（预警引擎已按 `actual_finish` 判定），但尚无独立填报页面。
+- **三版计划（考核版/履约版）**：✅ 已完成（2026-09-12 部署，见第八节）。内控/考核/履约三版由 `generate_version` 懒生成，`finish_inner` 作各版规范计划完成日；考核=内控+`buffer_kh` 天、履约=内控+`buffer_ly` 天（项目级期量裕度，默认 0）。
+- **实际进度填报**：✅ 已完成（2026-09-12 部署，见第八节）。`/project/<pid>/fill` 逐节点填报 `actual_start/actual_finish/progress_pct`，同一事实同步写三版并刷新三版预警；`/project/<pid>/compare` 三版并排对比含 kh/ly/af 偏差高亮。
 - **`std_node_rule` 种子为空**：参数化分支规则库无种子数据，引擎当前按标准依赖递推，未走规则分支。
 - **JSON 中文转义**：`critical-path.json` 用 `jsonify` 默认 `ensure_ascii=True`，中文显示为 `\uXXXX`（功能正常，仅可读性差，建议改 `ensure_ascii=False`）。
 - **部分节点偏移为空**：148 个 plan_node 中 102 个有 `finish_inner`，46 个为 NULL（依赖图未连到 T0 主线），预警计算会跳过这些节点。
@@ -85,3 +85,37 @@ docker exec -i devplan_mysql mysql -uroot --default-character-set=utf8mb4 dev_pl
 - 说明：项目 1 仅开工 10 天时自然计算 **0 命中**（早期节点偏差未达 7/14 天阈值），属正确行为——阈值内不算逾期。
 
 > 演示数据：项目 1 的 plan_node id=13（经营策划会）、id=7（精装设计单位选择及合同签订）已写入演示用 `actual_finish`。如需清空：`UPDATE plan_node SET actual_finish=NULL WHERE id IN (7,13);` 再重算即可。
+
+## 八、执行跟踪闭环（2026-09-12 部署）
+
+> 状态：**已上线（192.168.2.132:5001）**。把"计划只生成不跟踪"补成闭环：① 实际进度逐节点填报 → ② 计划/实际偏差自动预警 → ③ 内控/考核/履约三版一键生成并同屏对比（代建管控特色交付物）。适用前提：单人使用、暂不启用审批流。
+
+### 代码提交
+| commit | 内容 |
+|---|---|
+| `027d603` | feat: 执行跟踪闭环（实际进度填报 + 三版计划生成/对比）。DDL 加 `project.buffer_kh/buffer_ly`；引擎 `apply_to_project` 写入 `finish_inner`、引擎 `compute_alerts` 统一取 `finish_inner`；app 新增 `generate_version/regenerate_all_versions/ensure_all_versions/save_actual/compare_rows`；新增路由 `/project/<pid>/fill`、`/project/<pid>/compare`；新增模板 `project_fill.html`、`project_compare.html`；`project_detail` 支持 `?v=` 版本切换 + 工具栏入口。 |
+| `6b66826` | fix: 重生成版本前先删 `alert_record`，避免 MySQL 外键 1451（见下方"部署踩坑"）。 |
+| `abff7b8` | chore: `.gitignore` 忽略中继脚本/补丁/SQLite 备份副本（含口令，禁止入库）。 |
+
+### 部署链路（绕开 GitHub TLS）
+本地 GitHub 直推可达；服务器 `192.168.2.132` 经 `git pull` GitHub 因 TLS 握手失败不可达，故采用中继：
+1. 本地 `git format-patch -1 HEAD --stdout > _relay.mbox` → SFTP 上传至服务器 `/home/tang/devplan-ops/_relay.mbox`；
+2. 服务器本地 `git -c user.name=devplan -c user.email=devplan@local am _relay.mbox`（不依赖 GitHub）；
+3. 服务器 `.venv/bin/python3 db/init_buffer.py` 跑 MySQL 迁移（`buffer_kh/buffer_ly` 列，幂等）；
+4. `systemctl --user restart devplan-ops.service` 重启，健康检查 `curl /` 返回 200。
+
+> 注：服务器 `.venv` 路径带点（`/home/tang/devplan-ops/.venv`），系统 `python3` 缺 PyMySQL，迁移必须用 `.venv` 解释器；`git am` 需注入 committer 身份（否则报 identity unknown）。
+
+### 部署踩坑（重要）
+- **MySQL 外键 1451（仅 MySQL 复现，SQLite 不报错）**：`regenerate_all_versions` → `generate_version` 在 `DELETE FROM plan_node` 前未清理子表 `alert_record`（`alert_record.plan_node_id` 外键约束 `plan_node.id`），MySQL 严格 FK 直接报 `IntegrityError: (1451, Cannot delete or update a parent row)`。`6b66826` 修复为：删 plan_node 前先 `DELETE FROM alert_record WHERE plan_node_id IN (SELECT id FROM plan_node WHERE project_id=? AND version_id=?)`。本地 SQLite 默认关闭 FK 强制，故此前验证（py_compile + 副本库 10 项检查）未能暴露，必须在 MySQL 上回归。
+- **三版一致性（buffer=0 时本应完全相等）**：旧项目（1/2/3）在创建时已生成"内控"版 plan_node（旧代码/旧 T0），闭环上线后 `ensure_all_versions` 只补"考核/履约"两版、不重算"内控"，导致 内控 max finish_inner（如 2029-08-29）≠ 考核/履约（2029-10-28）。已对所有项目执行 `regenerate_all_versions` 统一重生成，复测 内控=考核=履约、偏差非0节点数=0、每版 148 节点、alert_record 重新生成（14 条）。
+
+### 已验证（线上 MySQL）
+- [x] 新路由 GET：项目详情（默认内控 / `?v=考核` / `?v=履约`）、`/project/<pid>/compare`、`/project/<pid>/fill`、`/alerts` 全部 200，页面命中"内控/考核/履约/实际进度/三版对比/偏差/计划完成"关键字。
+- [x] 3 个项目均存在 内控/考核/履约 三个 `plan_version`；每版 148 个 `plan_node`（`finish_inner` 145 个有值，3 个锚点节点为 NULL 符合预期）。
+- [x] buffer=0 时三版 `finish_inner` 完全相等；`kh_diff/ly_diff` 全 0。
+- [x] `alert_record` 在重生成后正确重建（14 条），预警链路贯通。
+
+### 待办
+- 服务器 `git am` 产生的提交哈希（如 `1b727f9`/`842a60b`）与 GitHub 主线（`027d603`/`6b66826`）内容等价但哈希不同；待服务器可直连 GitHub 时，在服务器执行 `git fetch origin && git reset --hard origin/main` 使三方哈希一致（功能已一致，仅历史哈希差异）。
+- 如需把执行跟踪闭环打包为可复用技能/规范，见工作区 memory。
