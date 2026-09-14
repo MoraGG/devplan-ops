@@ -156,6 +156,20 @@ def new_project():
     return render_template("new_project.html", bts=bts, prereqs=prereqs, existing={})
 
 
+def t0_anchor_std_node_id():
+    """返回 T0 锚点对应的 std_node_id（被 base_is_t0 依赖边指向的节点；项目启动即 T0）。"""
+    con = db(); cur = con.cursor()
+    try:
+        cur.execute(
+            "SELECT s.id FROM std_node s "
+            "JOIN std_node_dependency d ON s.excel_row = d.depend_row "
+            "WHERE d.base_is_t0 = 1 AND d.is_active = 1 LIMIT 1")
+        r = cur.fetchone()
+        return r["id"] if r else None
+    finally:
+        cur.close(); con.close()
+
+
 # ---------------- 编辑项目 ----------------
 @app.route("/project/<int:pid>/edit", methods=["GET", "POST"])
 def edit_project(pid):
@@ -187,6 +201,11 @@ def edit_project(pid):
         if t0 != old_t0 or prereq_json != old_prereq or buffer_kh != old_kh or buffer_ly != old_ly:
             d = engine_for(t0, prereq_json, pid).to_dict(project=name)
             cur.execute("UPDATE project SET plan_deliver=? WHERE id=?", (d["delivery_date"], pid))
+            # T0 锚点（项目启动）若被固定，使其固定日期与 plan_start 保持一致
+            aid = t0_anchor_std_node_id()
+            if aid is not None:
+                cur.execute("UPDATE project_node_fixed SET fixed_date=? WHERE project_id=? AND std_node_id=?",
+                            (t0, pid, aid))
             con.commit(); cur.close(); con.close()
             regenerate_all_versions(pid)
         else:
@@ -873,6 +892,9 @@ def edit_project_node(pid, nid):
             cur.execute("INSERT INTO project_node_fixed(project_id,std_node_id,fixed_date) VALUES(?,?,?)",
                         (pid, nid, fixed_date))
             log_rule_change("项目", nid, pid, "固定日期", before, {"fixed_date": fixed_date})
+            # 固定的是 T0 锚点（项目启动）时，同步项目 plan_start，避免「节点页 T0」与「项目信息 T0」不一致
+            if nid == t0_anchor_std_node_id():
+                cur.execute("UPDATE project SET plan_start=? WHERE id=?", (fixed_date, pid))
         elif m == "rule":
             try:
                 branches = json.loads(request.form.get("rules_json", "[]"))
