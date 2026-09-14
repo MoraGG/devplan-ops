@@ -119,3 +119,49 @@ docker exec -i devplan_mysql mysql -uroot --default-character-set=utf8mb4 dev_pl
 ### 待办
 - 服务器 `git am` 产生的提交哈希（如 `1b727f9`/`842a60b`）与 GitHub 主线（`027d603`/`6b66826`）内容等价但哈希不同；待服务器可直连 GitHub 时，在服务器执行 `git fetch origin && git reset --hard origin/main` 使三方哈希一致（功能已一致，仅历史哈希差异）。
 - 如需把执行跟踪闭环打包为可复用技能/规范，见工作区 memory。
+
+## 九、项目级固定日期失效 bug（2026-09-14 修复）
+
+> 状态：**已修复并上线（192.168.2.132:5001）**。commit `8501f10`，对柳林项目 pid=4 已 `regenerate_all_versions(4)` 重算验证。
+
+### 现象（用户报告）
+柳林项目把"完成整体正负零施工"（std_node_id=95，excel_row=98）改为固定日期 `2027-04-30` 后：
+- 该节点三版 `plan_node.finish_inner` 全为 `NULL`；
+- 下游依赖节点（depend_row=98）`std_node_id=96`（主体达到 1/2 层高）、`97`（主体结构封顶）三版 `finish_inner` 也全为 `NULL`。
+- `project_node_fixed` 落库正确（`fixed_date=2027-04-30`），问题在引擎计算阶段。
+
+### 根因
+`db/engine.py` `compute_offsets()` 注入项目级固定日期偏移：
+```python
+for nid, ds in self.project_fixed.items():
+    try:
+        offset[nid] = (datetime.date.fromisoformat(ds) - self.t0).days   # ← 仅对字符串正确
+    except Exception:
+        pass
+```
+MySQL 经 PyMySQL 返回的 `DATE` 列是 `datetime.date` 对象（**非字符串**）。`datetime.date.fromisoformat(<date对象>)` 抛 `TypeError`，被 `except Exception: pass` 吞掉 → 固定日期偏移**未注入** → 该节点 `offset=None` → `resolve()` 已对该节点 `continue`（不参与依赖推导），于是整条下游拓扑递推全为 `None`，节点及关联节点全部丢日期。
+
+### 修复
+改用引擎内已定义的 `_as_date(ds)`（同时兼容 `datetime.date` 对象与字符串，与第三节第 3 条同源坑）：
+```python
+for nid, ds in self.project_fixed.items():
+    fd = _as_date(ds)
+    if fd is not None:
+        offset[nid] = (fd - self.t0).days
+```
+`_as_date(v)`：`if isinstance(v, datetime.date): return v` → 对 MySQL 的 date 对象直接返回，不再走 `fromisoformat`。
+
+### 部署与验证
+- 本地 `git commit` + `git push origin main`（→ `8501f10`）。
+- 服务器：因 `origin` 为裸 `https://github.com/...`（无 PAT），改为带 PAT 的 origin URL 后 `git fetch origin main && git reset --hard origin/main`（HEAD=8501f10）；`systemctl --user restart devplan-ops.service`（`active`）。
+- 服务器 `.venv` 执行 `from app.app import regenerate_all_versions; regenerate_all_versions(4)` 重算三版。
+- 验证（柳林 pid=4，buffer_kh=buffer_ly=30）：
+  | 版本 | 95 完成整体正负零施工 | 96 主体达到1/2层高 | 97 主体结构封顶 |
+  |---|---|---|---|
+  | 内控 | 2027-04-30 ✓ | 2027-06-19 | 2027-06-16 |
+  | 考核 | 2027-05-30 | 2027-07-19 | 2027-07-16 |
+  | 履约 | 2027-05-30 | 2027-07-19 | 2027-07-16 |
+  节点 95 精确锚定固定日期；96/97 日期恢复非 NULL（其最终日期由"最大前驱+偏移"决定，被晚于 95 的另一条依赖链主导，符合拓扑-MAX 语义）。
+
+### 附带观察（非本次 bug，供参考）
+柳林 pid=4 每版 148 节点中有 **14 个 `finish_inner` 为 NULL**：其中 3 个（代建合同签订/取得国土证/联合验收完成）与项目 1 一致，属基线不可排程锚点；**另外 11 个「批量内装」节点（60/67/68/105/106/114/115/118/124/128/134）为 NULL，是项目 4 前置参数（prereq_json）未激活内装分支所致，与节点 95 不在同一依赖链，不受本 bug 影响**。若柳林需排内装计划，应补填对应前置参数后重算。
