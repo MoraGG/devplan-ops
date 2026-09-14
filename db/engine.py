@@ -192,10 +192,10 @@ class RelativeDateEngine:
             for (cid, did, drow, off, bt) in self.deps:
                 if cid != nid or not did or did not in offset:
                     continue
-                if bt:
-                    val = off                      # 相对 T0
-                else:
-                    val = offset[did] + off if offset.get(did) is not None else None
+                # base_is_t0 节点：相对「T0 锚点（项目启动）的实际偏移」，而非固定的 plan_start。
+                # 锚点未固定时其 offset=0，val=off 与原逻辑一致；锚点被固定(如 offset=23)时，
+                # 下游全部随锚点实际日期平移——修复「固定项目启动后经营策划会等不联动」的问题。
+                val = offset[did] + off if offset.get(did) is not None else None
                 if val is not None and (best is None or val > best):
                     best = val
             offset[nid] = best
