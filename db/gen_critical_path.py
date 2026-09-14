@@ -52,7 +52,7 @@ th{{color:#6b7280;font-weight:600}}.tag{{display:inline-block;padding:2px 8px;bo
 <div class="sub">引擎驱动 · 数据 100% 来自 MySQL（std_node + std_node_dependency）· CPM 关键路径 · 非甘特图</div>
 <div class="dbg">✅ 本页由 <code>db/engine.py</code> 读库实时计算生成，非 Excel 一次性脚本。工期引擎仅依据公式依赖，未读取标准期量文字。</div>
 <div class="card"><div class="kpi">
-<div><b>{esc(data['project'])}</b></div><div><b>{esc(data['t0'])}</b>计划开工(T0)</div>
+<div><b>{esc(data['project'])}</b></div><div><b>{esc(data['t0'])}</b>项目启动(T0)</div>
 <div><b>{esc(data['delivery_date'])}</b>计划交付</div><div><b>{esc(data['total_months'])} 月</b>总工期</div>
 <div><b>{len(data['critical_path'])} 个</b>关键路径节点</div></div></div>
 <div class="card"><h3 style="margin-top:0">计划关键路径（决定交付日期的最长依赖链）</h3><div class="path">{path_html}</div></div>

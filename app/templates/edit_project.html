@@ -3,7 +3,7 @@
 {% block content %}
 <a class="back" href="{{ url_for('project_detail', pid=p.id) }}">← 返回项目详情</a>
 <h1 style="margin-top:10px">编辑项目</h1>
-<div class="lead">修改基础信息与前置参数。若调整「计划开工(T0)」，系统会自动按新基准重算交付日与全部计划节点。</div>
+<div class="lead">修改基础信息与前置参数。若调整「项目启动(T0)」，系统会自动按新基准重算交付日与全部计划节点。</div>
 
 <div class="form-wrap">
   <form method="post">
@@ -15,7 +15,7 @@
     <select name="building_type_id">
       {% for b in bts %}<option value="{{ b.id }}" {% if b.id == p.building_type_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
     </select>
-    <label>计划开工(T0) *</label>
+    <label>项目启动(T0) *</label>
     <input name="plan_start" required type="date" value="{{ p.plan_start }}">
     <label>项目状态</label>
     <select name="status">

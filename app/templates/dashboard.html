@@ -19,7 +19,7 @@
     <a class="pcard-edit" href="{{ url_for('edit_project', pid=c.id) }}">编辑</a>
     <h3>{{ c.name }}</h3>
     <div class="meta">委托方：{{ c.client }} · 楼型：{{ c.building_type }}</div>
-    <div class="row"><span>T0 计划开工</span><b>{{ c.t0 }}</b></div>
+    <div class="row"><span>T0 项目启动</span><b>{{ c.t0 }}</b></div>
     <div class="row"><span>计划交付</span><b>{{ c.delivery }}</b></div>
     <div class="row"><span>总工期</span><b>{{ c.total_months }} 月</b></div>
     <div class="row"><span>关键路径节点</span><b>{{ c.crit_nodes }} 个 · 里程碑 {{ c.crit_miles }}/13</b></div>

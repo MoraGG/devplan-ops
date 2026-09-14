@@ -18,7 +18,7 @@
       {% for pr in profs %}<option value="{{ pr.id }}" {% if pr.id == node.profession_id %}selected{% endif %}>{{ pr.name }}</option>{% endfor %}
     </select>
 
-    <label>是否为 T0 基准（开工日，偏移=0）</label>
+    <label>是否为 T0 基准（项目启动日，偏移=0）</label>
     <select id="baseSel" name="base_is_t0" onchange="toggleDep()">
       <option value="0" {% if not (dep and dep.base_is_t0) %}selected{% endif %}>否（依赖其他节点）</option>
       <option value="1" {% if dep and dep.base_is_t0 %}selected{% endif %}>是（T0 基准）</option>

@@ -679,7 +679,7 @@ def build_compare_xlsx(pid):
     ws.append([f"{p['name']}（{p['client'] or '—'}）· 三版计划对比"])
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11)
     ws["A1"].font = Font(bold=True, size=13)
-    sub = (f"计划开工：{p['plan_start']}　期量裕度：考核+{p['buffer_kh'] or 0}天 / "
+    sub = (f"项目启动：{p['plan_start']}　期量裕度：考核+{p['buffer_kh'] or 0}天 / "
            f"履约+{p['buffer_ly'] or 0}天　业务当前日：{TODAY}")
     ws.append([sub])
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11)
