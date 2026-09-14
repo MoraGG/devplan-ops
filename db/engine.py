@@ -159,11 +159,12 @@ class RelativeDateEngine:
             if n["excel_row"] in anchor_rows:
                 offset[nid] = 0
         # 项目级固定日期覆盖：以 (fixed_date - T0) 作为绝对偏移注入（优先级最高）
+        # 注意：MySQL 经 PyMySQL 返回的 DATE 列是 datetime.date 对象（非字符串），
+        # 故必须用 _as_date 统一处理 date/str，避免 fromisoformat(date) 抛 TypeError 被吞掉。
         for nid, ds in self.project_fixed.items():
-            try:
-                offset[nid] = (datetime.date.fromisoformat(ds) - self.t0).days
-            except Exception:
-                pass
+            fd = _as_date(ds)
+            if fd is not None:
+                offset[nid] = (fd - self.t0).days
         # 拓扑排序（depend -> node 方向）
         indeg = defaultdict(int)
         adj = defaultdict(list)
