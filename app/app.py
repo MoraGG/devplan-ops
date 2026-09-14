@@ -8,9 +8,10 @@
 """
 import os
 import sys
+import io
 import datetime
 import json
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "db"))
 from engine import RelativeDateEngine, ensure_default_alert_rules, compute_alerts  # noqa: E402
@@ -659,6 +660,80 @@ def compare_rows(pid):
     return out
 
 
+def build_compare_xlsx(pid):
+    """生成项目三版计划对比工作簿（openpyxl），返回 BytesIO；项目不存在返回 None。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    ensure_all_versions(pid)
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT id,name,client,plan_start,buffer_kh,buffer_ly FROM project WHERE id=?", (pid,))
+    p = cur.fetchone()
+    con.close()
+    if not p:
+        return None
+    rows = compare_rows(pid)
+
+    wb = Workbook(); ws = wb.active; ws.title = "三版计划对比"
+    # 标题块
+    ws.append([f"{p['name']}（{p['client'] or '—'}）· 三版计划对比"])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11)
+    ws["A1"].font = Font(bold=True, size=13)
+    sub = (f"计划开工：{p['plan_start']}　期量裕度：考核+{p['buffer_kh'] or 0}天 / "
+           f"履约+{p['buffer_ly'] or 0}天　业务当前日：{TODAY}")
+    ws.append([sub])
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11)
+    ws["A2"].font = Font(size=10, color="666666")
+
+    headers = ["序号", "等级", "节点名称", "内控完成日", "考核完成日", "履约完成日", "实际完成日",
+               "内控→考核(天)", "内控→履约(天)", "实际−内控(天)", "状态"]
+    ws.append(headers)
+    hrow = 3
+    hdr_fill = PatternFill("solid", fgColor="305496")
+    for c in range(1, 12):
+        cell = ws.cell(row=hrow, column=c)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = hdr_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="D9D9D9")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for r in rows:
+        fi_n = _as_date(r["fi_inner"]); fi_k = _as_date(r["fi_kh"])
+        fi_l = _as_date(r["fi_ly"]); af = _as_date(r["actual"])
+        status = r["status"] or "正常"
+        ws.append([
+            r["seq"] if r["seq"] is not None else "—",
+            r["level"] or "", r["name"],
+            fi_n, fi_k, fi_l, af,
+            r["kh_diff"], r["ly_diff"], r["af_diff"], status,
+        ])
+        rr = ws.max_row
+        for col in (4, 5, 6, 7):
+            cell = ws.cell(row=rr, column=col)
+            if isinstance(cell.value, datetime.date):
+                cell.number_format = "YYYY-MM-DD"
+        for col in (8, 9, 10):
+            v = ws.cell(row=rr, column=col).value
+            if isinstance(v, int):
+                ws.cell(row=rr, column=col).value = (f"{v:+d}" if v != 0 else "一致")
+        scell = ws.cell(row=rr, column=11)
+        if status == "延期":
+            scell.fill = PatternFill("solid", fgColor="F8CBAD")
+        elif status == "预警":
+            scell.fill = PatternFill("solid", fgColor="FFE699")
+        for col in range(1, 12):
+            ws.cell(row=rr, column=col).border = border
+    widths = [8, 8, 40, 13, 13, 13, 13, 14, 14, 14, 8]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A4"
+    ws.auto_filter.ref = f"A{hrow}:K{ws.max_row}"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def recompute_project_finish(pid, vid, t0, prereq_json):
     """按当前（含项目级 override 的）引擎重算该版本所有节点的 finish_inner（保留 actual 等填报），并回写交付日。"""
     if vid is None:
@@ -889,6 +964,21 @@ def project_compare(pid):
     rows = compare_rows(pid)
     con.close()
     return render_template("project_compare.html", p=p, rows=rows, today=TODAY)
+
+
+# ---------------- 导出 Excel（三版计划对比） ----------------
+@app.route("/project/<int:pid>/export.xlsx")
+def project_export_xlsx(pid):
+    buf = build_compare_xlsx(pid)
+    if buf is None:
+        return "项目不存在", 404
+    con = db(); cur = con.cursor()
+    cur.execute("SELECT name FROM project WHERE id=?", (pid,))
+    p = cur.fetchone(); con.close()
+    fname = f"{(p['name'] if p else 'project')}_三版计划对比_{TODAY}.xlsx"
+    return send_file(buf,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=fname)
 
 
 # ---------------- 预警引擎 ----------------

@@ -7,6 +7,7 @@
 
 <div class="toolbar">
   <a class="btn" href="{{ url_for('project_fill', pid=p.id) }}">📋 实际进度填报</a>
+  <a class="btn" href="{{ url_for('project_export_xlsx', pid=p.id) }}">⬇ 导出 Excel</a>
   <span class="muted" style="font-size:12px">业务当前日：{{ today }}</span>
 </div>
 
